@@ -1,0 +1,58 @@
+>> x = randn(1000,1000);
+>> y = x'*x;
+>> x2 = x;
+>> x2(2,4) = x(2,4) + 0.00001;
+>> y2 = x2'*x2;
+>> ei = zeros(1000,1);
+>> ej = zeros(1000,1);
+>> ei(2) = 1;
+>> ej(4) = 1;
+>> z = (y2 - y)/.00001;
+>> max(max(abs(z2 - z)))
+Undefined function or variable 'z2'.
+ 
+>> z2 = ej*ei'*y + y'*ei*ej';
+>> max(max(abs(z2 - z)))
+
+ans =
+
+   1.0246e+03
+
+>> z2 = ej*ei'*y + y'*ei*ej';
+>> z2 = ej*ei'*x + x'*ei*ej';
+>> max(max(abs(z2 - z)))
+
+ans =
+
+   9.9984e-06
+
+>> x = randn(1000,1000);
+>> y = x*x';
+>> x2 = x;
+>> x2(2,4) = x(2,4) + 0.00001;
+>> y2 = x*x';
+>> ei = zeros(1000,1);
+>> ej = zeros(1000,1);
+>> ei(2) = 1;
+>> ej(4) = 1;
+>> A = rand(1000,1000);
+>> B = rand(1000,1000);
+>> C = B*A;
+>> C(2,4)
+
+ans =
+
+  246.3529
+
+>> z = A*ej*ei'*B;
+>> shape(z)
+Undefined function or variable 'shape'.
+ 
+Did you mean:
+>> size(z)
+
+ans =
+
+        1000        1000
+
+>> z = (y2 - y)/.00001;

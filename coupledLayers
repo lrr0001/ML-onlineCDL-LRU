@@ -1,0 +1,30 @@
+import numpy as np
+import tensorflow as tf
+
+
+class outerClass:
+    def __init__(self,...):
+        self.D = tf.variable()
+        self.Q = toolbox.factorizationObject(D,rho)
+        self.Dx = DX(self)
+        self.Qinvx = QINVX(self)
+
+    class DX:
+        def __init__(self,outerClass):
+            self.outerClass = outerClass
+        def build(self, input_shape):
+            pass
+        def call(self, inputs):
+            return tf.matmul(self.outerClass.D,inputs)
+        def output_shape(self, input_shape):
+            pass
+
+    class QINVX:
+        def __init__(self,outerClass):
+            self.outerClass = outerClass
+        def build(self, input_shape):
+            pass
+        def call(self, inputs):
+            return self.outerClass.Q.inv_mat(inputs)
+        def output_shape(self, input_shape):
+            pass

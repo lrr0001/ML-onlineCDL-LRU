@@ -1,0 +1,42 @@
+I need two very different custom layers in Keras (TensorFlow) that share the same weight variable. How do I get this to work?
+
+
+I tried this class structure (layers are simple to communicate concept):
+
+
+        import tensorflow as tf
+
+        class outerClass:
+            def __init__(self,a_init):
+                self.var_a = tf.Variable(initial_value=a_init,trainable=True)
+                self.layer1 = self.CustomLayer1(self)
+                self.layer2 = self.CustomLayer2(self)
+
+            class CustomLayer1(tf.keras.layers.Layer): # add variable a
+                def __init__(self,outerclass):
+                    super().__init__()
+                    self.outerclass = outerclass
+                def call(self, inputs):
+                    return tf.math.add(self.outerclass.var_a,inputs)
+
+            class CustomLayer2(tf.keras.layers.Layer): # multiply by variable a
+                def __init__(self,outerclass):
+                    super().__init__()
+                    self.outerclass = outerclass
+                def call(self, inputs):
+                    return tf.math.multiply(self.outerclass.var_a,inputs)
+
+
+However, when I add these layers to my model variable 'a' is not added to trainable variables.
+
+
+        inputs = tf.keras.Input(shape=(1,))
+        oc = cL.outerClass(2.)
+        x1 = oc.layer1(inputs)  # adds variable a
+        outputs = oc.layer2(x1) # multiplies by variable a
+
+        model = tf.keras.Model(inputs,outputs)
+        print(model.trainable_variables)
+
+
+Result: []
