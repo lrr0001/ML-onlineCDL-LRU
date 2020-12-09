@@ -2,12 +2,13 @@ import tensorflow as tf
 import transforms as transf
 
 class dictionary_object2D:
-    def __init__(self,fltrSz,fftSz,noc,nof,rho,*args,dtype=tf.complex64,**kwargs):
+    def __init__(self,fltrSz,fftSz,noc,nof,rho,epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
         self.dtype = dtype
         self.fftSz = fftSz
         self.noc = noc
         self.nof = nof
         self.fltrSz = fltrSz
+        self.epsilon = epsilon
         Df = self.init_dict(fltrSz,fftSz,noc,nof)
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,**kwargs)
@@ -29,7 +30,7 @@ class dictionary_object2D:
     def Qinv(self,inputs):
         return self.qinv(inputs)
 
-    def _update_dict(self):
+    def _dict_update(self):
         Dnew = transf.ifft2d_inner(self.fftSz)(self.dhmul.Df)
         theUpdate = Dnew - self.D
         theUpdate = tf.transpose(theUpdate)
@@ -39,6 +40,10 @@ class dictionary_object2D:
         self.D.assign(self.D + approx)
         U = tf.transpose(U.reshape((1,1,1,self.n_components,self.noc))
         V = tf.math.conj(tf.transpose(transf.fft2d_inner(self.fftSz)(V.reshape((1,) + fltrSz + (nof,n_components,)))))
+        Df = self._update_decomposition(U,V)
+        self.dhmul.Df.assign(Df)
+
+    def _update_decomposition(self,U,V)
         UhU = tf.math.reduce_sum(tf.math.conj(U)*U,axes=3,keepdims=True) 
         VhV = tf.math.reduce_sum(tf.math.conj(V)*V,axes=3,keepdims=True)
         if self.qinv.wdbry:
@@ -49,8 +54,7 @@ class dictionary_object2D:
             for v,uhu in zip(unstack(V),unstack(UhU)):
                 symmUp = tfp.math.cholesky_update(self.qinv.L,v,uhu)
             Df = self._symm_rank2_updates(uf,Vf,VhV,symmUp)
-
-        self.dhmul.Df.assign(Df)
+        return Df
 
     def _symm_rank2_updates(self,Uf,Vf,VhV,symmUp):
         dfprev = tf.identity(self.dhmul.Dfprev)
@@ -69,12 +73,12 @@ class dictionary_object2D:
             eigvecMinus = uhddhu*v + (j1*tf.complex(tf.math.imag(vhdhu),0) - rootRadicand)*dhu
 
             # If the two eigenvalues are not distinct, eigenvectors must be chosen to be orthogonal
-            eigvecPlus = tf.where(tf.math.abs(rootRadicand) > tol,eigvecPlus,v)
-            eigvecMinus = tf.where(tf.math.abs(rootRadicand) > tol,eigvecMinus,-tf.math.divide_no_nan(vhdhu,vhv)*v + dhu)
+            eigvecPlus = tf.where(tf.math.abs(rootRadicand) > self.epsilon,eigvecPlus,v)
+            eigvecMinus = tf.where(tf.math.abs(rootRadicand) > self.epsilon,eigvecMinus,-tf.math.divide_no_nan(vhdhu,vhv)*v + dhu)
 
             # Normalize eigenvectors
-            eigvecPlus = tf.l2_normalize(eigvecPlus,axis=3,epsilon=tol)
-            eigvecMinus = tf.l2_normalize(eigvecMinus,axis=3,epsilon=tol)
+            eigvecPlus = tf.l2_normalize(eigvecPlus,axis=3,epsilon=self.epsilon)
+            eigvecMinus = tf.l2_normalize(eigvecMinus,axis=3,epsilon=self.epsilon)
 
             # Update Cholesky decomposition
             with tf.control_dependencies([symmUp]):
@@ -103,12 +107,12 @@ class dictionary_object2D:
             eigvecMinus = uhddhu*v + (j1*tf.complex(tf.math.imag(uhdv),0) - rootRadicand)*dv
 
             # If the two eigenvalues are not distinct, eigenvectors should be chosen to be orthogonal
-            eigvecPlus = tf.where(tf.math.abs(rootRadicand) > tol,eigvecPlus,u)
-            eigvecMinus = tf.where(tf.math.abs(rootRadicand) > tol,eigvecMinus,-tf.math.divide_no_nan(uhdv,uhu)*u + dv)
+            eigvecPlus = tf.where(tf.math.abs(rootRadicand) > self.epsilon,eigvecPlus,u)
+            eigvecMinus = tf.where(tf.math.abs(rootRadicand) > self.epsilon,eigvecMinus,-tf.math.divide_no_nan(uhdv,uhu)*u + dv)
 
             # Normalize eigenvectors
-            eigvecPlus = tf.l2_normalize(eigvecPlus,axis=3,epsilon=tol)
-            eigvecMinus = tf.l2_normalize(eigvecMinus,axis=3,epsilon=tol)
+            eigvecPlus = tf.l2_normalize(eigvecPlus,axis=3,epsilon=self.epsilon)
+            eigvecMinus = tf.l2_normalize(eigvecMinus,axis=3,epsilon=self.epsilon)
 
             # Update Cholesky decomposition
             tfp.math.cholesky_update(self.qinv.L,eigvecPlus,eigvalPlus)
@@ -118,43 +122,6 @@ class dictionary_object2D:
             with tf.control_dependencies([dhu]):
                 dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + u*tf.transpose(v.reshape(v.shape + (1,),conjugate=True))
         return dfprev
-
-
-
-    def _DupdateFun(Dupdate,M,n_components,n_oversamples,n_iter,power_iteration_normalizer,transpose):
-        Dutransposed = tf.transpose(Dupdate,perm=(0,1,2,4,3))
-        returnShape = Dutransposed.shape
-        Dureshaped = tf.reshape(Dutransposed,shape = (-1,C))
-        # Not sure what module this will end up in. Seems like a decomposition
-        # Might switch order of outputs to match Tensorflow's SVD
-        Us,s,Vs = randomized_svd(Dureshaped,n_components,n_oversamples,n_iter,power_iteration_normalizer,transpose)
-        # Need to assess which is more efficient
-        if thisIsMoreEfficient:
-            Us = tf.math.mathvec(Us,s)
-        else:
-            Vs = tf.transpose(tf.math.mathvec(Vs,s,adjoint_a=True),conjugate=True)
-        # Reshape U and V
-        V = tf.transpose(Us.reshape(shape=returnShape[:-1] + (n_components,)),adjoint = True)
-        U = tf.transpose(Vs.reshape(shape=(1,1,1,n_components,C)),adjoint = False)
-        # Convert both U and V to frequency domain
-        Uf = U # (1,1,1,C,n_components)
-        Vf = transf.switch_spatial_and_channel_fltr(transf.fft(transf.switch_spatial_and_channelfltr(V))) # (1,fft0,fft1,M,n_components)
-        UhU = tf.math.reduce_sum(tf.math.conj(Uf)*Uf,axes=3, keepdims= True)
-        VhV = tf.math.reduce_sum(tf.math.conj(Vf)*Vf,axes=3,keepdims=True)
-        DhU = tf.linalg.matmul(Dfprev,Uf,adjoint_a=True) # (1,1,1,M,n_components)
-        UhDV = tf.math.reduce_sum(tf.math.conj(DhU)*Vf,axes=3,keepdims=True)
-        DV = tf.linalg.matmul(Dfprev,V) # (1,fft0,fft1,C,n_components)
-        VhDhU = tf.math.reduce_sum(tf.math.conj(DV)*Uf,axes=3,keepdims=True)
-        radicand = tf.math.sqrt(VhV*UhDDhU - tf.math.imag(UhDV)**2)
-        eigvalsPlus = tf.math.real(UhDV) + radicand
-        eigvalsMinus = tf.math.real(UhDV) - radicand
-        eigvecsPlus = tf.where(tf.abs(radicand) > tol,UhDdhu*Vf + (-1j*tf.math.imag(UhDV)+radicand)*DhU,Vf)
-        eigvecsMinus = tf.where(tf.abs(radicand) > tol,UhDdhu*Vf + (-1j*tf.math.imag(UhDV)-radicand)*DhU,-tf.math.divide_no_nan(VhDhU,VhV)*Vf + DhU)
-        eigvecsPlus = tf.l2_normalize(eigvecsPlus,axis=3,epsilon=tol)
-        eigvecsMinus = tf.l2_normalize(eigvecsMinus,axis=3,epsilon=tol)
-        
-        # need to use split to break up updates
-        # need to use eigs to update cholesky decomposition.
 
 
 class symplified_dict_obj2D(dictionary_object2D):
@@ -251,43 +218,6 @@ class DhMul(tf.keras.layers.Layer):
 
     def call(self, inputs):
         return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
-
-def eig2x2(a,b,c,d):
-    apd = (a + d)/2
-    amd = (a - d)/2
-    bc = b*c
-    radicand = tf.math.sqrt(amd + bc)
-    eig1 = apd + radicand
-    eig2 = apd - radicand
-
-def eig2x2_conja(a,b,c,axis=0:
-    # preliminary computations
-    apd = tf.math.real(a)
-    amd = tf.math.imag(a)
-    bc = b*c
-    radicand = tf.math.sqrt(tf.complex(bc - amd**2,.0))
-
-    # compute eigenvalues
-    val1 = tf.complex(apd,0.) + radicand
-    val2 = tf.complex(apd,0.) - radicand
-
-    # compute eigenvectors
-    temp1 =radicand - 1j*amd
-
-    # tf.concat does not broadcast
-
-    # Can't normalize zeros, so this check is neccessary. 
-    if tf.math.abs(temp1) < tol and tf.math.abs(b) < tol:
-        vec1 = tf.concat((tf.ones(b.shape),tf.zeros(temp1.shape),axis=axis)
-        vec2 = tf.concat((tf.zeros(b.shape),tf.ones(temp1.shape),axis=axis)
-    else:
-        vec1 = tf.concat((b,temp1),axis=axis)
-        temp1 = -tf.math.conj(temp1)
-        vec2 = tf.concat((b,temp1),axis=axis)
-        # normalize the vectors
-        vec1 = tf.math.l2_normalize(vec1,axis)
-        vec2 = tf.math.l2_normalize(vec2,axis)
-    return ((val1,val2),(vec1,vec2))
 
 def get_lowrank_approx(A,n_components,n_oversamples,n_iter,powerIterationNormalizer,transpose):
     U,s,V = randomized_svd(A,n_components,n_oversamples,n_iter,powerIterationsNormalizer,transpose)
