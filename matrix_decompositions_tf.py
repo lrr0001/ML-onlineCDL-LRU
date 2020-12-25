@@ -12,19 +12,27 @@ class dictionary_object2D(ppg.PostProcess):
         self.nof = nof
         self.fltrSz = fltrSz
         self.epsilon = epsilon
+        self.rho = rho
+
+
         self.n_components=3
+
         Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof)
+
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,**kwargs)
         self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,**kwargs)
-        #self._dict_update()
+
         ppg.PostProcess.update[self.dhmul.varname] = self._dict_update
         
     def init_dict(self,fltrSz,fftSz,noc,nof):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Drand = tf.random.normal(shape=(1,) + fltrSz + (noc,nof),dtype=tf.dtypes.as_dtype(self.dtype).real_dtype)
         Dmeaned = Drand - tf.math.reduce_mean(input_tensor=Drand,axis = (1,2),keepdims=True)
-        self.D = tf.Variable(initial_value=np.prod(fltrSz)*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True)),trainable=False)
+        # Why scale by filter size, not number of channels?
+        #Dnormalized = np.prod(fltrSz)*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
+        Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
+        self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
         return transf.fft2d_inner(fftSz)(self.D)       
 
     def Dmul(self,inputs):
@@ -40,17 +48,26 @@ class dictionary_object2D(ppg.PostProcess):
         Dnew = transf.ifft2d_inner(self.fftSz)(self.dhmul.Df)
         # Truncate Dnew to match filter size.
         theUpdate = Dnew[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)] - self.D
+
+        # This should be isolated into a function
         theUpdate = tf.transpose(theUpdate,perm=(0,1,2,4,3),conjugate=False)
-        # these are flipped on purpose
-        V,U,approx = get_lowrank_approx(tf.reshape(theUpdate,shape=(np.prod(self.fltrSz)*self.nof,self.noc)))
+        theUpdate = tf.reshape(theUpdate,shape=(np.prod(self.fltrSz)*self.nof,self.noc))
+        # these are flipped on purpose: UV^H = ((VU^H)^T)*
+        V,U,approx = get_lowrank_approx(theUpdate)
+        #print(tf.math.sqrt(tf.math.reduce_sum((theUpdate-approx)*tf.math.conj(theUpdate-approx)))/tf.math.sqrt(tf.math.reduce_sum(theUpdate*tf.math.conj(theUpdate))))
+
+        # This process should be a function as well
         approx = tf.transpose(tf.reshape(approx,shape=((1,) + self.fltrSz + (self.nof,self.noc,))),perm=(0,1,2,4,3))
         self.D.assign(self.D + approx)
 
+        # Separate the reshaping process from the conversion to frequency domain, move to function
         # U does not capture spatial information, so under standard normalization conventions, frequency transform is identity.
-        U = tf.complex(tf.transpose(tf.reshape(U,(1,1,1,self.n_components,self.noc)),perm=(0,1,2,4,3)),np.float64(0))
-        V = transf.fft2d_inner(self.fftSz)(tf.reshape(V,(1,) + self.fltrSz + (self.nof,self.n_components,)))
+        U = tf.math.conj(complexNum(tf.reshape(U,(1,1,1,self.noc,self.n_components)))) #conjugate unnecessary: U is real.
+
+        # Should the conjugate really come after the fft?
+        V = tf.math.conj(transf.fft2d_inner(self.fftSz)(tf.reshape(V,(1,) + self.fltrSz + (self.nof,self.n_components,))))
         Df = self._update_decomposition(U,V)
-        self.dhmul.Df.assign(Df)
+        self.dhmul.Df = self.dhmul.Df.assign(Df)
         
     def _update_decomposition(self,U,V):
 
@@ -62,7 +79,7 @@ class dictionary_object2D(ppg.PostProcess):
                 self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,u,vhv))
         else:
             # Redundant Computation: This is also computed in the rank-2 eigendecomposition
-            UhU = tf.math.reduce_sum(tf.math.conj(U)*U,axis=3,keepdims=False)
+            UhU = tf.math.reduce_sum(tf.math.conj(U)*U,axis=3,keepdims=False) # conjugate unnecessary: U is real.
             for v,uhu in zip(tf.unstack(V,axis=-1),tf.unstack(UhU,axis=-1)):
                 self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,v,uhu))
 
@@ -80,8 +97,17 @@ class dictionary_object2D(ppg.PostProcess):
                 self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + tf.reshape(u,u.shape + (1,))*tf.transpose(tf.reshape(v,v.shape + (1,)),perm=(0,1,2,4,3),conjugate=True))
         return self.dhmul.Dfprev
 
-
-
+class dictionary_object2D_full(dictionary_object2D):
+    def _dict_update(self):
+        #D = transf.ifft2d_inner(self.fftSz)(self.dhmul.Df)
+        #Dtrunc = D[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
+        #self.dhmul.Df = self.dhmul.Df.assign(transf.fft2d_inner(self.fftSz)(Dtrunc))
+        if self.qinv.wdbry:
+            idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
+            self.qinv.L = self.qinv.L.assign(tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True)))
+        else:
+            idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
+            self.qinv.L = self.qinv.L.assign(tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True)))
 
 class symplified_dict_obj2D(dictionary_object2D):
     #def __init__(self,noc,nof,rho,*args,dtype=tf.float32,**kwargs):
@@ -187,11 +213,11 @@ class DhMul(tf.keras.layers.Layer):
 
 def get_lowrank_approx(A,n_components=3,n_oversamples=10,n_iter='auto',powerIterationNormalizer='auto',transpose='auto'):
     U,s,V = randomized_svd(A,n_components,n_oversamples,n_iter,powerIterationNormalizer,transpose)
-    if transpose:
-        U = U*tf.reshape(s,(1,-1))
+    if A.shape[1] > A.shape[0]:
+        U = U*tf.cast(tf.reshape(s,(1,-1)),U.dtype)
     else:
-        V = tf.transpose(V*tf.reshape(s,(1,-1)),conjugate=True)
-    return (U,V, tf.linalg.matmul(U,V))
+        V = V*tf.cast(tf.reshape(s,(1,-1)),V.dtype)
+    return (U,V, tf.linalg.matmul(U,tf.transpose(V,conjugate=True)))
 
 
 
@@ -281,7 +307,11 @@ def randomized_svd(A, n_components=3, n_oversamples=10, n_iter='auto',
             power_iteration_normalizer=power_iteration_normalizer)
         B = tf.matmul(Q, A,adjoint_a=True)
         s, Uhat, V = tf.linalg.svd(B, full_matrices = False)
-        U = Q @ Uhat[:, :n_components]
+
+        if Uhat.dtype.is_complex and not Q.dtype.is_complex:
+            U = tf.cast(Q,Uhat.dtype) @ Uhat[:, :n_components]
+        else:
+            U = Q @ Uhat[:, :n_components]
     else:
        s, U, V = tf.linalg.svd(A, full_matrices = False)
 
@@ -292,7 +322,7 @@ def randomized_svd(A, n_components=3, n_oversamples=10, n_iter='auto',
         return U[:,:n_components], s[:n_components], V[:,:n_components]
 
 def randomized_range_finder(A, rangeSize, n_iter,
-                            power_iteration_normalizer='auto',dtype= tf.float32):
+                            power_iteration_normalizer='auto'):
     """This code was adapted from the randomized_range_finder function in the scikit-learn library.
     (sklearn.utils.extmath.randomized_range_finder)
 
@@ -335,7 +365,11 @@ def randomized_range_finder(A, rangeSize, n_iter,
     analysis
     A. Szlam et al. 2014
     """
-    Q2 = tf.random.normal(shape = (A.shape[-1],rangeSize),dtype=dtype)
+    dtype = A.dtype
+    if dtype.is_complex:
+        Q2 = tf.complex(tf.random.normal(shape=(A.shape[-1],rangeSize),dtype=dtype.real_dtype),tf.random.normal(shape=(A.shape[-1],rangeSize),dtype=dtype.real_dtype))
+    else:
+        Q2 = tf.random.normal(shape = (A.shape[-1],rangeSize),dtype=dtype)
 
     # Deal with "auto" mode
     if power_iteration_normalizer == 'auto':
