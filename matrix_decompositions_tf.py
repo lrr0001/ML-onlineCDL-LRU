@@ -49,24 +49,20 @@ class dictionary_object2D(ppg.PostProcess):
         # Truncate Dnew to match filter size.
         theUpdate = Dnew[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)] - self.D
 
-        # This should be isolated into a function
-        theUpdate = tf.transpose(theUpdate,perm=(0,1,2,4,3),conjugate=False)
-        theUpdate = tf.reshape(theUpdate,shape=(np.prod(self.fltrSz)*self.nof,self.noc))
-        # these are flipped on purpose: UV^H = ((VU^H)^T)*
-        V,U,approx = get_lowrank_approx(theUpdate)
-        #print(tf.math.sqrt(tf.math.reduce_sum((theUpdate-approx)*tf.math.conj(theUpdate-approx)))/tf.math.sqrt(tf.math.reduce_sum(theUpdate*tf.math.conj(theUpdate))))
+        theUpdate = tf.reshape(tf.transpose(theUpdate,perm=(3,0,1,2,4)),shape=(self.noc,np.prod(self.fltrSz)*self.nof))
 
-        # This process should be a function as well
-        approx = tf.transpose(tf.reshape(approx,shape=((1,) + self.fltrSz + (self.nof,self.noc,))),perm=(0,1,2,4,3))
+        U,V,approx = get_lowrank_approx(theUpdate)
+
+        approx = tf.reshape(approx,shape=(1,) + self.fltrSz + (self.noc,self.nof,))
         self.D.assign(self.D + approx)
 
-        # Separate the reshaping process from the conversion to frequency domain, move to function
-        # U does not capture spatial information, so under standard normalization conventions, frequency transform is identity.
-        U = tf.math.conj(complexNum(tf.reshape(U,(1,1,1,self.noc,self.n_components)))) #conjugate unnecessary: U is real.
+        U = tf.reshape(U,(1,1,1,self.noc,self.n_components))
+        V = tf.reshape(V,(1,) + self.fltrSz + (self.nof,self.n_components))
 
-        # Should the conjugate really come after the fft?
-        V = tf.math.conj(transf.fft2d_inner(self.fftSz)(tf.reshape(V,(1,) + self.fltrSz + (self.nof,self.n_components,))))
-        Df = self._update_decomposition(U,V)
+        Uf = complexNum(U)
+        Vf = transf.fft2d_inner(self.fftSz)(V)
+
+        Df = self._update_decomposition(Uf,Vf)
         self.dhmul.Df = self.dhmul.Df.assign(Df)
         
     def _update_decomposition(self,U,V):
@@ -417,3 +413,17 @@ def rank2eigen(U,V,epsilon=1e-5):
     valPlus = tf.reshape(valPlus,valPlus.shape[:-1])
     valMinus = tf.reshape(valMinus,valMinus.shape[:-1])
     return ((valPlus,valMinus),(vecPlus,vecMinus))
+
+def stack_svd(x,**kwargs):
+    s = int(tf.rank(x)) - 2
+    forwardPerm = (s,) + tuple(range(s)) + (s + 1,)
+    backwardPerm = tuple(range(1,s + 1)) + (0,s + 1,)
+    y = tf.transpose(x,perm = forwardPerm)
+    z = tf.reshape(y,(x.shape[s],-1,))
+    U,V,approx = get_lowrank_approx(z,**kwargs)
+    approx = tf.reshape(approx,[x.shape[ii] for ii in forwardPerm])
+    approx = tf.transpose(approx,backwardPerm)
+    U = tf.reshape(U,(1,)*s + tuple(U.shape))
+    V = tf.reshape(V,tuple([x.shape[ii] for ii in forwardPerm[1:]]) + (V.shape[-1],))
+    return U,V,approx
+
