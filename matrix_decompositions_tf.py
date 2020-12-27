@@ -29,8 +29,6 @@ class dictionary_object2D(ppg.PostProcess):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Drand = tf.random.normal(shape=(1,) + fltrSz + (noc,nof),dtype=tf.dtypes.as_dtype(self.dtype).real_dtype)
         Dmeaned = Drand - tf.math.reduce_mean(input_tensor=Drand,axis = (1,2),keepdims=True)
-        # Why scale by filter size, not number of channels?
-        #Dnormalized = np.prod(fltrSz)*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
         Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
         self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
         return transf.fft2d_inner(fftSz)(self.D)       
@@ -49,16 +47,8 @@ class dictionary_object2D(ppg.PostProcess):
         # Truncate Dnew to match filter size.
         theUpdate = Dnew[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)] - self.D
 
-        theUpdate = tf.reshape(tf.transpose(theUpdate,perm=(3,0,1,2,4)),shape=(self.noc,np.prod(self.fltrSz)*self.nof))
-
-        U,V,approx = get_lowrank_approx(theUpdate)
-
-        approx = tf.reshape(approx,shape=(1,) + self.fltrSz + (self.noc,self.nof,))
+        U,V,approx = stack_svd(theUpdate,5)
         self.D.assign(self.D + approx)
-
-        U = tf.reshape(U,(1,1,1,self.noc,self.n_components))
-        V = tf.reshape(V,(1,) + self.fltrSz + (self.nof,self.n_components))
-
         Uf = complexNum(U)
         Vf = transf.fft2d_inner(self.fftSz)(V)
 
@@ -85,7 +75,7 @@ class dictionary_object2D(ppg.PostProcess):
                 asvec = tf.linalg.matvec(self.dhmul.Dfprev,v) #assymmetic vector
                 eigvals,eigvecs = rank2eigen(u,asvec)
             else:
-                asvec = tf.linalg.matvec(self.dhmul.dfprev,u,adjoint_a=True)
+                asvec = tf.linalg.matvec(self.dhmul.Dfprev,u,adjoint_a=True)
                 eigvals,eigvecs = rank2eigen(v,asvec) # assymmetric vector
             for ii in range(2):
                 self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,eigvecs[ii],eigvals[ii]))
@@ -158,7 +148,7 @@ class QInv(tf.keras.layers.Layer):
                         Dy = self.dmul(y)
                         Dainvdg = self.dmul(ainvdg)
                         dgainv = tf.transpose(a=ainvdg,perm=(0,1,2,4,3),conjugate=True)
-                        return (tf.identity(dg),tensorflow.math.reduce_sum(input_tensor=Dy*dgainv + y_T*tf.math.conj(Dainvdg),axis=0,keepdims=True))
+                        return (tf.identity(dg),tf.math.reduce_sum(input_tensor=Dy*dgainv + y_T*tf.math.conj(Dainvdg),axis=0,keepdims=True))
                 return tf.identity(y),grad
             return gradient_trick(output,self.dhmul.Df)
 
@@ -414,8 +404,8 @@ def rank2eigen(U,V,epsilon=1e-5):
     valMinus = tf.reshape(valMinus,valMinus.shape[:-1])
     return ((valPlus,valMinus),(vecPlus,vecMinus))
 
-def stack_svd(x,**kwargs):
-    s = int(tf.rank(x)) - 2
+def stack_svd(x,r,**kwargs):
+    s = r - 2
     forwardPerm = (s,) + tuple(range(s)) + (s + 1,)
     backwardPerm = tuple(range(1,s + 1)) + (0,s + 1,)
     y = tf.transpose(x,perm = forwardPerm)
