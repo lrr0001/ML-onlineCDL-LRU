@@ -8,7 +8,7 @@ ei = zeros(1000,1);
 ej = zeros(1000,1);
 ei(2) = 1;
 ej(4) = 1;
-z = (y2 - y)/abs(epsilon);
+z = (y2 - y)/epsilon;
 z2 = ej*ei'*x + x'*ei*ej';
 max(max(abs(z2 - z)))
 
@@ -51,4 +51,35 @@ ei(2) = 1;
 ej(4) = 1;
 z = (y2 - y)/epsilon;
 z2 = 1j*ei*ej'*x' - x*1j*ej*ei';
+max(max(abs(z2 - z)))
+
+rho = 1;
+w = randn(1000,1) + j*randn(1000,1);
+x = randn(1000,1000) + j*randn(1000,1000);
+y = (rho*eye(1000) + x'*x) \ w;
+x2 = x;
+x2(2,4) = x(2,4) + epsilon;
+y2 = (rho*eye(1000) + x2'*x2) \ w;
+ei = zeros(1000,1);
+ej = zeros(1000,1);
+ei(2) = 1;
+ej(4) = 1;
+z = (y2 - y)/epsilon;
+z2 = -(rho*eye(1000) + x'*x) \ ((ej*ei'*x + x'*ei*ej')* ((rho*eye(1000) + x'*x) \ w));
+max(max(abs(z2 - z)))
+
+
+rho = 1;
+w = randn(1000,1) + j*randn(1000,1);
+x = randn(1000,1000) + j*randn(1000,1000);
+y = (rho*eye(1000) + x'*x) \ w;
+x2 = x;
+x2(2,4) = x(2,4) + 1j*epsilon;
+y2 = (rho*eye(1000) + x2'*x2) \ w;
+ei = zeros(1000,1);
+ej = zeros(1000,1);
+ei(2) = 1;
+ej(4) = 1;
+z = (y2 - y)/epsilon;
+z2 = -(rho*eye(1000) + x'*x) \ ((-1j*ej*ei'*x + 1j*x'*ei*ej')* ((rho*eye(1000) + x'*x) \ w));
 max(max(abs(z2 - z)))

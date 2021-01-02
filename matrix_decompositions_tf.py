@@ -135,20 +135,21 @@ class QInv(tf.keras.layers.Layer):
             @tf.custom_gradient
             def gradient_trick(y,Df):
                 def grad(dg):
-                    halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=tf.math.conj(dg),lower=True)
+                    halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
                     ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
                     if self.wdbry:
                         Dhy = self.dhmul(y)
-                        Dhy_T = tf.transpose(a=Dhy,perm=(0,1,2,4,3),conjugate=False)
+                        DhyH = tf.transpose(a=Dhy,perm=(0,1,2,4,3),conjugate=True)
                         Dhainvdg = self.dhmul(ainvdg)
-                        dgainvD = tf.transpose(a=Dhainvdg,perm=(0,1,2,4,3),conjugate=True)
-                        return (tf.identity(dg),tf.math.reduce_sum(input_tensor=tf.math.conj(ainvdg*Dhy_T) + y*dgainvD,axis=0,keepdims=True))
+                        DhainvdgH = tf.transpose(a=Dhainvdg,perm=(0,1,2,4,3),conjugate=True)
+                        gradD = -ainvdg*DhyH - y*DhainvdgH
                     else:
-                        y_T = tf.transpose(a=y,perm=(0,1,2,4,3),conjugate=False)
                         Dy = self.dmul(y)
                         Dainvdg = self.dmul(ainvdg)
-                        dgainv = tf.transpose(a=ainvdg,perm=(0,1,2,4,3),conjugate=True)
-                        return (tf.identity(dg),tf.math.reduce_sum(input_tensor=Dy*dgainv + tf.math.conj(y_T)*Dainvdg,axis=0,keepdims=True))
+                        yH = tf.transpose(y,perm=(0,1,2,4,3),conjugate=True)
+                        ainvdgH = tf.transpose(ainvdg,perm=(0,1,2,4,3),conjugate=True)
+                        gradD = -Dy*ainvdgH - Dainvdg*yH    
+                    return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
                 return tf.identity(y),grad
             return gradient_trick(output,self.dhmul.Df)
 
@@ -179,13 +180,13 @@ class QInv_auto(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         self.Df = tf.Variable(initial_value=dhmul.Df,trainable=True)
         self.rho = rho
-        #self.wdbry = self.Df.shape[-2] <= self.Df.shape[-1]
+        self.wdbry = self.Df.shape[-2] < self.Df.shape[-1]
     def call(self,inputs):
-        #if self.wdbry:
-        #    Dx = tf.linalg.matmul(self.Df,inputs)
-        #    idmat = tf.eye(num_rows = self.Df.shape[-2],batch_shape = (1,1,1),dtype = self.Df.dtype)
-        #    ainv = tf.linalg.inv(self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_b=True))
-        #    return 1/self.rho*(inputs - tf.linalg.matmul(self.Df,tf.linalg.matmul(ainv,Dx),adjoint_a = True))
+        if self.wdbry:
+            Dx = tf.linalg.matmul(self.Df,inputs)
+            idmat = tf.eye(num_rows = self.Df.shape[-2],batch_shape = (1,1,1),dtype = self.Df.dtype)
+            ainv = tf.linalg.inv(self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_b=True))
+            return 1/self.rho*(inputs - tf.linalg.matmul(self.Df,tf.linalg.matmul(ainv,Dx),adjoint_a = True))
         #else:
         idmat = tf.eye(num_rows = self.Df.shape[-1],batch_shape= (1,1,1),dtype = self.Df.dtype)
         a = self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_a = True)
