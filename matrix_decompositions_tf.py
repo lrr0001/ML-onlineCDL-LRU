@@ -5,7 +5,7 @@ import numpy as np
 import post_process_grad as ppg
 
 class dictionary_object2D(ppg.PostProcess):
-    def __init__(self,fltrSz,fftSz,noc,nof,rho,epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
+    def __init__(self,fltrSz,fftSz,noc,nof,rho,lraParam = {},epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
         self.dtype = dtype
         self.fftSz = fftSz
         self.noc = noc
@@ -13,9 +13,7 @@ class dictionary_object2D(ppg.PostProcess):
         self.fltrSz = fltrSz
         self.epsilon = epsilon
         self.rho = rho
-
-
-        self.n_components=3
+        self.lraParam = lraParam
 
         Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof)
 
@@ -31,6 +29,7 @@ class dictionary_object2D(ppg.PostProcess):
         Dmeaned = Drand - tf.math.reduce_mean(input_tensor=Drand,axis = (1,2),keepdims=True)
         Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
         self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
+        self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False)
         return transf.fft2d_inner(fftSz)(self.D)       
 
     def Dmul(self,inputs):
@@ -42,16 +41,28 @@ class dictionary_object2D(ppg.PostProcess):
     def Qinv(self,inputs):
         return self.qinv(inputs)
 
-    def _dict_update(self):
-        Dnew = transf.ifft2d_inner(self.fftSz)(self.dhmul.Df)
-        # Truncate Dnew to match filter size.
-        theUpdate = Dnew[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)] - self.D
+    def computeR(self,D):
+        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
 
-        U,V,approx = stack_svd(theUpdate,5)
-        self.D.assign(self.D + approx)
+    def get_constrained_D(self,Df):
+        return ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,Df)
+
+    def _dict_update(self):
+        Dnew = self.get_constrained_D(self.dhmul.Df)
+
+        # compute low rank approximation of the update
+        theUpdate = Dnew - self.D
+        U,V,approx = stack_svd(theUpdate,5,**self.lraParam)
+ 
+        # Update Spatial-Domain Dictionary and Normalization Factor
+        self.D = self.D.assign(self.D + approx)
+        self.R.assign(self.computeR(self.D))
+        
+        # Compute DFT
         Uf = complexNum(U)
         Vf = transf.fft2d_inner(self.fftSz)(V)
 
+        # Update Decomposition and Frequency-Domain Dictionary
         Df = self._update_decomposition(Uf,Vf)
         self.dhmul.Df = self.dhmul.Df.assign(Df)
         
@@ -73,48 +84,39 @@ class dictionary_object2D(ppg.PostProcess):
         for u,v in zip(tf.unstack(U,axis=-1),tf.unstack(V,axis=-1)):
             if self.qinv.wdbry:
                 asvec = tf.linalg.matvec(self.dhmul.Dfprev,v) #assymmetic vector
-                eigvals,eigvecs = rank2eigen(u,asvec)
+                eigvals,eigvecs = rank2eigen(u,asvec,self.epsilon)
             else:
                 asvec = tf.linalg.matvec(self.dhmul.Dfprev,u,adjoint_a=True)
-                eigvals,eigvecs = rank2eigen(v,asvec) # assymmetric vector
+                eigvals,eigvecs = rank2eigen(v,asvec,self.epsilon) # assymmetric vector
             for ii in range(2):
                 self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,eigvecs[ii],eigvals[ii]))
             with tf.control_dependencies([asvec]):
-                self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + tf.reshape(u,u.shape + (1,))*tf.transpose(tf.reshape(v,v.shape + (1,)),perm=(0,1,2,4,3),conjugate=True))
+                self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + addDim(u)*conj_tp(addDim(v)))
         return self.dhmul.Dfprev
 
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
-        #D = transf.ifft2d_inner(self.fftSz)(self.dhmul.Df)
-        #Dtrunc = D[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
-        #self.dhmul.Df = self.dhmul.Df.assign(transf.fft2d_inner(self.fftSz)(Dtrunc))
+        D = self.get_constrained_D(self.dhmul.Df)
+        self.D.assign(D)
+        self.R.assign(self.computeR(D))
+        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D))
+        Df = self._update_decomposition()
+        self.dhmul.Df.assign(Df)
+
+    def _update_decomposition(self,U=None,V=None):
+        # Update Decomposition
         if self.qinv.wdbry:
             idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            self.qinv.L = self.qinv.L.assign(tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True)))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True))
         else:
             idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            self.qinv.L = self.qinv.L.assign(tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True)))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_a = True))
+        self.qinv.L = self.qinv.L.assign(L)
+        return self.dhmul.Dfprev
 
-class symplified_dict_obj2D(dictionary_object2D):
-    #def __init__(self,noc,nof,rho,*args,dtype=tf.float32,**kwargs):
-    #    self.dtype = dtype
-    #    D = self.init_dict(noc,nof)
-    #    self.dhmul = DhMul(D,*args,dtype=self.dtype,**kwargs)
-    #    self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,**kwargs)
-    #    self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,**kwargs)
-     
-    def init_dict(self,fltrSz=None,fftSz=None,noc=3,nof=16):
-        self.D = tf.random.normal(shape=(1,1,1,noc,nof,),dtype=tf.dtypes.as_dtype(self.dtype))
-        return self.D
 
-    #def Dmul(self,inputs):
-    #    return self.dmul(inputs)
 
-    #def Dhmul(self,inputs):
-    #    return self.dhmul(inputs)
 
-    #def Qinv(self,inputs):
-    #    return self.qinv(inputs)
 
 class QInv(tf.keras.layers.Layer):
     def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
@@ -128,7 +130,7 @@ class QInv(tf.keras.layers.Layer):
         def solve_inverse(x):
             # I want auto-differentiation of the input, but not of the weights.
             # The solution? Create a pass-through "gradient layer" that computes the gradient for the weights.
-            # I will need to make sure that TensorFlow does not attempt to differentiate self.L.  
+ 
             halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
             output = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
 
@@ -139,16 +141,17 @@ class QInv(tf.keras.layers.Layer):
                     ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
                     if self.wdbry:
                         Dhy = self.dhmul(y)
-                        DhyH = tf.transpose(a=Dhy,perm=(0,1,2,4,3),conjugate=True)
+                        DhyH = conj_tp(Dhy)
                         Dhainvdg = self.dhmul(ainvdg)
-                        DhainvdgH = tf.transpose(a=Dhainvdg,perm=(0,1,2,4,3),conjugate=True)
+                        DhainvdgH = conj_tp(Dhainvdg)
                         gradD = -ainvdg*DhyH - y*DhainvdgH
                     else:
                         Dy = self.dmul(y)
                         Dainvdg = self.dmul(ainvdg)
-                        yH = tf.transpose(y,perm=(0,1,2,4,3),conjugate=True)
-                        ainvdgH = tf.transpose(ainvdg,perm=(0,1,2,4,3),conjugate=True)
-                        gradD = -Dy*ainvdgH - Dainvdg*yH    
+                        yH = conj_tp(y)
+                        ainvdgH = conj_tp(ainvdg)
+                        gradD = -Dy*ainvdgH - Dainvdg*yH
+                    # Question: should this be mean or sum? I do not know.
                     return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
                 return tf.identity(y),grad
             return gradient_trick(output,self.dhmul.Df)
@@ -166,14 +169,13 @@ class QInv(tf.keras.layers.Layer):
     def init_chol(self,noc,nof):
         if noc <= nof:
             idMat = tf.linalg.eye(num_rows = noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            self.L = tf.Variable(initial_value=tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True)),trainable=False)
-            #self.L = tf.stop_gradient(input=tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True))
             self.wdbry = True
         else:
             idMat = tf.linalg.eye(num_rows = nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            self.L = tf.Variable(initial_value = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True)),trainable=False)
-            #self.L = tf.stop_gradient(input = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True))
             self.wdbry = False
+        self.L = tf.Variable(initial_value = L,trainable=False)
 
 class QInv_auto(tf.keras.layers.Layer):
     def __init__(self,dhmul,rho,*args,**kwargs):
@@ -187,12 +189,12 @@ class QInv_auto(tf.keras.layers.Layer):
             idmat = tf.eye(num_rows = self.Df.shape[-2],batch_shape = (1,1,1),dtype = self.Df.dtype)
             ainv = tf.linalg.inv(self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_b=True))
             return 1/self.rho*(inputs - tf.linalg.matmul(self.Df,tf.linalg.matmul(ainv,Dx),adjoint_a = True))
-        #else:
-        idmat = tf.eye(num_rows = self.Df.shape[-1],batch_shape= (1,1,1),dtype = self.Df.dtype)
-        a = self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_a = True)
-        inputs = tf.transpose(inputs,perm=(4,1,2,3,0))
-        x = tf.linalg.solve(a,inputs)
-        return tf.transpose(x,perm = (4,1,2,3,0))
+        else:
+            idmat = tf.eye(num_rows = self.Df.shape[-1],batch_shape= (1,1,1),dtype = self.Df.dtype)
+            a = self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_a = True)
+            inputs = tf.transpose(inputs,perm=(4,1,2,3,0))
+            x = tf.linalg.solve(a,inputs)
+            return tf.transpose(x,perm = (4,1,2,3,0))
 
 class DMul(tf.keras.layers.Layer):
     def __init__(self,dhmul,*args,**kwargs):
@@ -213,6 +215,9 @@ class DhMul(tf.keras.layers.Layer):
     def call(self, inputs):
         return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
 
+
+
+
 def get_lowrank_approx(A,n_components=3,n_oversamples=10,n_iter='auto',powerIterationNormalizer='auto',transpose='auto'):
     U,s,V = randomized_svd(A,n_components,n_oversamples,n_iter,powerIterationNormalizer,transpose)
     if A.shape[1] > A.shape[0]:
@@ -223,7 +228,7 @@ def get_lowrank_approx(A,n_components=3,n_oversamples=10,n_iter='auto',powerIter
 
 
 
-# This function has not been tested.
+
 def randomized_svd(A, n_components=3, n_oversamples=10, n_iter='auto',
                    power_iteration_normalizer='auto', transpose='auto'):
     """ This code was adapted from the randomized_svd function from scikit-learn library.
@@ -400,6 +405,11 @@ def randomized_range_finder(A, rangeSize, n_iter,
 def complexNum(x):
     return tf.complex(x,tf.cast(0.0,dtype = x.dtype))
 
+def ifft_trunc_normalize(fltrSz,fftSz,noc,Df):
+    D = transf.ifft2d_inner(fftSz)(Df)
+    Dtrunc = D[slice(None),slice(0,fltrSz[0],1),slice(0,fltrSz[1],1),slice(None),slice(None)]
+    return noc*Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
+
 def rank2eigen(U,V,epsilon=1e-5):
     vhv = tf.reduce_sum(tf.math.conj(V)*V,axis=-1,keepdims=True)
     uhu = tf.reduce_sum(tf.math.conj(U)*U,axis=-1,keepdims=True)
@@ -412,7 +422,6 @@ def rank2eigen(U,V,epsilon=1e-5):
     vecMinus = vhv*U + (1j*complexNum(tf.math.imag(uhv))  - rootRadicand)*V
     vecPlus = tf.where(tf.abs(rootRadicand) > epsilon,vecPlus,U)
     vecMinus = tf.where(tf.abs(rootRadicand) > epsilon,vecMinus,-tf.math.divide_no_nan(uhv,uhu)*U + V)
-    #tf.debugging.Assert(condition=tf.abs(rootRadicands) > 1e-5,data=rootRadicands)
         
     vecPlus = tf.math.l2_normalize(vecPlus,epsilon=epsilon)
     vecMinus = tf.math.l2_normalize(vecMinus,epsilon=epsilon)
@@ -432,4 +441,10 @@ def stack_svd(x,r,**kwargs):
     U = tf.reshape(U,(1,)*s + tuple(U.shape))
     V = tf.reshape(V,tuple([x.shape[ii] for ii in forwardPerm[1:]]) + (V.shape[-1],))
     return U,V,approx
+
+def conj_tp(x):
+    return tf.transpose(x,perm=(0,1,2,4,3),conjugate=True)
+
+def addDim(x):
+    return tf.reshape(x,shape=x.shape + (1,))
 
