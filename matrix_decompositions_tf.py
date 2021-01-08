@@ -58,9 +58,9 @@ class dictionary_object2D(ppg.PostProcess):
         self.D = self.D.assign(self.D + approx)
         self.R.assign(self.computeR(self.D))
         
-        # Compute DFT
+        # Compute DFT (The conjugate is necessary because F{A} = F{U}F{V}^T
         Uf = complexNum(U)
-        Vf = transf.fft2d_inner(self.fftSz)(V)
+        Vf = tf.math.conj(transf.fft2d_inner(self.fftSz)(V))
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df = self._update_decomposition(Uf,Vf)
@@ -94,6 +94,33 @@ class dictionary_object2D(ppg.PostProcess):
                 self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + addDim(u)*conj_tp(addDim(v)))
         return self.dhmul.Dfprev
 
+class dictionary_object2D_init(dictionary_object2D):
+    def __init__(self,fftSz,D,rho,lraParam = {},epsilon=1e-6,*args,**kwargs):
+        self.dtype = transf.complexify_dtype(D.dtype)
+        self.fftSz = fftSz
+        self.noc = D.shape[-2]
+        self.nof = D.shape[-1]
+        self.fltrSz = D.shape[1:3]
+        self.epsilon = epsilon
+        self.rho = rho
+        self.lraParam = lraParam
+
+        Df = self.init_dict(fftSz=fftSz,D=D)
+
+        self.dhmul = DhMul(Df,*args,dtype=self.dtype,**kwargs)
+        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,**kwargs)
+        self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,**kwargs)
+
+        ppg.PostProcess.update[self.dhmul.varname] = self._dict_update
+        
+    def init_dict(self,fftSz,D):
+        assert(tf.dtypes.as_dtype(self.dtype).is_complex)
+        Dmeaned = D - tf.math.reduce_mean(input_tensor=D,axis = (1,2),keepdims=True)
+        Dnormalized = D.shape[-2]*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
+        self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
+        self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False)
+        return transf.fft2d_inner(fftSz)(self.D)       
+
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
         D = self.get_constrained_D(self.dhmul.Df)
@@ -104,7 +131,6 @@ class dictionary_object2D_full(dictionary_object2D):
         self.dhmul.Df.assign(Df)
 
     def _update_decomposition(self,U=None,V=None):
-        # Update Decomposition
         if self.qinv.wdbry:
             idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True))
@@ -114,7 +140,24 @@ class dictionary_object2D_full(dictionary_object2D):
         self.qinv.L = self.qinv.L.assign(L)
         return self.dhmul.Dfprev
 
+class dictionary_object2D_init_full(dictionary_object2D_init):
+    def _dict_update(self):
+        D = self.get_constrained_D(self.dhmul.Df)
+        self.D.assign(D)
+        self.R.assign(self.computeR(D))
+        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D))
+        Df = self._update_decomposition()
+        self.dhmul.Df.assign(Df)
 
+    def _update_decomposition(self,U=None,V=None):
+        if self.qinv.wdbry:
+            idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Dfprev,b = self.dhmul.Dfprev,adjoint_b = True))
+        else:
+            idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Dfprev,b = self.dhmul.Dfprev,adjoint_a = True))
+        self.qinv.L = self.qinv.L.assign(L)
+        return self.dhmul.Dfprev
 
 
 
@@ -151,7 +194,6 @@ class QInv(tf.keras.layers.Layer):
                         yH = conj_tp(y)
                         ainvdgH = conj_tp(ainvdg)
                         gradD = -Dy*ainvdgH - Dainvdg*yH
-                    # Question: should this be mean or sum? I do not know.
                     return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
                 return tf.identity(y),grad
             return gradient_trick(output,self.dhmul.Df)
@@ -184,17 +226,17 @@ class QInv_auto(tf.keras.layers.Layer):
         self.rho = rho
         self.wdbry = self.Df.shape[-2] < self.Df.shape[-1]
     def call(self,inputs):
-        if self.wdbry:
-            Dx = tf.linalg.matmul(self.Df,inputs)
-            idmat = tf.eye(num_rows = self.Df.shape[-2],batch_shape = (1,1,1),dtype = self.Df.dtype)
-            ainv = tf.linalg.inv(self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_b=True))
-            return 1/self.rho*(inputs - tf.linalg.matmul(self.Df,tf.linalg.matmul(ainv,Dx),adjoint_a = True))
-        else:
-            idmat = tf.eye(num_rows = self.Df.shape[-1],batch_shape= (1,1,1),dtype = self.Df.dtype)
-            a = self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_a = True)
-            inputs = tf.transpose(inputs,perm=(4,1,2,3,0))
-            x = tf.linalg.solve(a,inputs)
-            return tf.transpose(x,perm = (4,1,2,3,0))
+        #if self.wdbry:
+        #    Dx = tf.linalg.matmul(self.Df,inputs)
+        #    idmat = tf.eye(num_rows = self.Df.shape[-2],batch_shape = (1,1,1),dtype = self.Df.dtype)
+        #    ainv = tf.linalg.inv(self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_b=True))
+        #    return 1/self.rho*(inputs - tf.linalg.matmul(self.Df,tf.linalg.matmul(ainv,Dx),adjoint_a = True))
+        #else:
+        idmat = tf.eye(num_rows = self.Df.shape[-1],batch_shape= (1,1,1),dtype = self.Df.dtype)
+        a = self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_a = True)
+        inputs = tf.transpose(inputs,perm=(4,1,2,3,0))
+        x = tf.linalg.solve(a,inputs)
+        return tf.transpose(x,perm = (4,1,2,3,0))
 
 class DMul(tf.keras.layers.Layer):
     def __init__(self,dhmul,*args,**kwargs):
@@ -218,8 +260,8 @@ class DhMul(tf.keras.layers.Layer):
 
 
 
-def get_lowrank_approx(A,n_components=3,n_oversamples=10,n_iter='auto',powerIterationNormalizer='auto',transpose='auto'):
-    U,s,V = randomized_svd(A,n_components,n_oversamples,n_iter,powerIterationNormalizer,transpose)
+def get_lowrank_approx(A,*args,**kwargs):
+    U,s,V = randomized_svd(A,*args,**kwargs)
     if A.shape[1] > A.shape[0]:
         U = U*tf.cast(tf.reshape(s,(1,-1)),U.dtype)
     else:
@@ -411,9 +453,9 @@ def ifft_trunc_normalize(fltrSz,fftSz,noc,Df):
     return noc*Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
 
 def rank2eigen(U,V,epsilon=1e-5):
-    vhv = tf.reduce_sum(tf.math.conj(V)*V,axis=-1,keepdims=True)
-    uhu = tf.reduce_sum(tf.math.conj(U)*U,axis=-1,keepdims=True)
-    uhv = tf.reduce_sum(tf.math.conj(U)*V,axis=-1,keepdims=True)
+    vhv = tf.math.reduce_sum(tf.math.conj(V)*V,axis=-1,keepdims=True)
+    uhu = tf.math.reduce_sum(tf.math.conj(U)*U,axis=-1,keepdims=True)
+    uhv = tf.math.reduce_sum(tf.math.conj(U)*V,axis=-1,keepdims=True)
     rootRadicand = tf.math.sqrt(vhv*uhu - complexNum(tf.math.imag(uhv)**2))
         
     valPlus = complexNum(tf.math.real(uhv)) + rootRadicand

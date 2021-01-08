@@ -60,3 +60,17 @@ class henchmanLayer(tf.keras.layers.Layer):
     def call(self,inputs):
         return tf.math.multiply(self.mastermind.var_a,inputs)
 
+class landlordLayer(tf.keras.layers.Layer):
+    def __init__(self,a_init):
+        self.var_a = tf.Variable(initial_value=a_init,trainable=True)
+        super().__init__()
+    def call(self,inputs):
+        return tf.math.add(self.var_a,inputs)
+
+class tenantLayer(tf.keras.layers.Layer):
+    def __init__(self,a):
+        self.a = a
+        super().__init__()
+    def call(self,inputs):
+        return tf.math.multiply(self.a,inputs)
+
