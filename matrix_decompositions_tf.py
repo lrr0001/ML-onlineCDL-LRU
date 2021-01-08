@@ -80,18 +80,25 @@ class dictionary_object2D(ppg.PostProcess):
             for v,uhu in zip(tf.unstack(V,axis=-1),tf.unstack(UhU,axis=-1)):
                 self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,v,uhu))
 
+
+        if self.qinv.wdbry:
+            asVec = tf.linalg.matmul(self.dhmul.Dfprev,V)
+        else:
+            asVec = tf.linalg.matmul(self.dhmul.Dfprev,U,adjoint_a = True)
         # rank-2 Hermitian updates
-        for u,v in zip(tf.unstack(U,axis=-1),tf.unstack(V,axis=-1)):
+        for u,v,asvec in zip(tf.unstack(U,axis=-1),tf.unstack(V,axis=-1),tf.unstack(asVec,axis=-1)):
             if self.qinv.wdbry:
-                asvec = tf.linalg.matvec(self.dhmul.Dfprev,v) #assymmetic vector
+                #asvec = tf.linalg.matvec(self.dhmul.Dfprev,v) #assymmetic vector
                 eigvals,eigvecs = rank2eigen(u,asvec,self.epsilon)
             else:
-                asvec = tf.linalg.matvec(self.dhmul.Dfprev,u,adjoint_a=True)
+                #asvec = tf.linalg.matvec(self.dhmul.Dfprev,u,adjoint_a=True)
                 eigvals,eigvecs = rank2eigen(v,asvec,self.epsilon) # assymmetric vector
             for ii in range(2):
                 self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,eigvecs[ii],eigvals[ii]))
-            with tf.control_dependencies([asvec]):
-                self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + addDim(u)*conj_tp(addDim(v)))
+
+        # Update dictionary
+        with tf.control_dependencies([asvec]):
+            self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + U @ conj_tp(V))
         return self.dhmul.Dfprev
 
 class dictionary_object2D_init(dictionary_object2D):
