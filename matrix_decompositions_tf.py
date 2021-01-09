@@ -1,8 +1,9 @@
 import tensorflow as tf
-import tensorflow_probability as tfp
+#import tensorflow_probability as tfp
 import transforms as transf
 import numpy as np
 import post_process_grad as ppg
+import tf_rewrites as tfr
 
 class dictionary_object2D(ppg.PostProcess):
     def __init__(self,fltrSz,fftSz,noc,nof,rho,lraParam = {},epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
@@ -65,22 +66,22 @@ class dictionary_object2D(ppg.PostProcess):
         # Update Decomposition and Frequency-Domain Dictionary
         Df = self._update_decomposition(Uf,Vf)
         self.dhmul.Df = self.dhmul.Df.assign(Df)
-        
-    def _update_decomposition(self,U,V):
 
-        # rank-1 Hermitian updates        
+    def _rank1_updates(self,U,V):
+         # rank-1 Hermitian updates        
         if self.qinv.wdbry:
             # Redundant Computation: This is also computed in the rank-2 eigendecomposition.
             VhV = tf.math.reduce_sum(tf.math.conj(V)*V,axis=3,keepdims=False)
             for u,vhv in zip(tf.unstack(U,axis=-1),tf.unstack(VhV,axis=-1)):
-                self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,u,vhv))
+                self.qinv.L = self.qinv.L.assign(tfr.cholesky_update(self.qinv.L,u,vhv))
         else:
             # Redundant Computation: This is also computed in the rank-2 eigendecomposition
             UhU = tf.math.reduce_sum(tf.math.conj(U)*U,axis=3,keepdims=False) # conjugate unnecessary: U is real.
             for v,uhu in zip(tf.unstack(V,axis=-1),tf.unstack(UhU,axis=-1)):
-                self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,v,uhu))
+                self.qinv.L = self.qinv.L.assign(tfr.cholesky_update(self.qinv.L,v,uhu))
+        return self.qinv.L
 
-
+    def _rank2_updates(self,U,V):
         if self.qinv.wdbry:
             asVec = tf.linalg.matmul(self.dhmul.Dfprev,V)
         else:
@@ -94,10 +95,14 @@ class dictionary_object2D(ppg.PostProcess):
                 #asvec = tf.linalg.matvec(self.dhmul.Dfprev,u,adjoint_a=True)
                 eigvals,eigvecs = rank2eigen(v,asvec,self.epsilon) # assymmetric vector
             for ii in range(2):
-                self.qinv.L = self.qinv.L.assign(tfp.math.cholesky_update(self.qinv.L,eigvecs[ii],eigvals[ii]))
+                self.qinv.L = self.qinv.L.assign(tfr.cholesky_update(self.qinv.L,eigvecs[ii],eigvals[ii]))
+        return asVec
 
+    def _update_decomposition(self,U,V):
+        self.qinv.L = self._rank1_updates(U,V)
+        asVec = self._rank2_updates(U,V)
         # Update dictionary
-        with tf.control_dependencies([asvec]):
+        with tf.control_dependencies([asVec]):
             self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + U @ conj_tp(V))
         return self.dhmul.Dfprev
 
