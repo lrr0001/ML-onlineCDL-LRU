@@ -57,35 +57,35 @@ class dictionary_object2D(ppg.PostProcess):
  
         # Update Spatial-Domain Dictionary and Normalization Factor
         self.D = self.D.assign(self.D + approx)
-        self.R.assign(self.computeR(self.D))
+        self.R = self.R.assign(self.computeR(self.D))
         
         # Compute DFT (The conjugate is necessary because F{A} = F{U}F{V}^T
         Uf = complexNum(U)
         Vf = tf.math.conj(transf.fft2d_inner(self.fftSz)(V))
 
         # Update Decomposition and Frequency-Domain Dictionary
-        Df = self._update_decomposition(Uf,Vf)
-        self.dhmul.Df = self.dhmul.Df.assign(Df)
+        Df,self.qinv.L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
+        return [self.D,self.R,self.dhmul.Df.assign(Df),self.qinv.L]
 
-    def _rank1_updates(self,U,V):
+    def _rank1_updates(self,U,V,L):
          # rank-1 Hermitian updates        
         if self.qinv.wdbry:
             # Redundant Computation: This is also computed in the rank-2 eigendecomposition.
             VhV = tf.math.reduce_sum(tf.math.conj(V)*V,axis=3,keepdims=False)
             for u,vhv in zip(tf.unstack(U,axis=-1),tf.unstack(VhV,axis=-1)):
-                self.qinv.L = self.qinv.L.assign(tfr.cholesky_update(self.qinv.L,u,vhv))
+                L = self.qinv.L.assign(tfr.cholesky_update(L,u,vhv))
         else:
             # Redundant Computation: This is also computed in the rank-2 eigendecomposition
             UhU = tf.math.reduce_sum(tf.math.conj(U)*U,axis=3,keepdims=False) # conjugate unnecessary: U is real.
             for v,uhu in zip(tf.unstack(V,axis=-1),tf.unstack(UhU,axis=-1)):
-                self.qinv.L = self.qinv.L.assign(tfr.cholesky_update(self.qinv.L,v,uhu))
-        return self.qinv.L
+                L = self.qinv.L.assign(tfr.cholesky_update(L,v,uhu))
+        return L
 
-    def _rank2_updates(self,U,V):
+    def _rank2_updates(self,U,V,Dfprev,L):
         if self.qinv.wdbry:
-            asVec = tf.linalg.matmul(self.dhmul.Dfprev,V)
+            asVec = tf.linalg.matmul(Dfprev,V)
         else:
-            asVec = tf.linalg.matmul(self.dhmul.Dfprev,U,adjoint_a = True)
+            asVec = tf.linalg.matmul(Dfprev,U,adjoint_a = True)
         # rank-2 Hermitian updates
         for u,v,asvec in zip(tf.unstack(U,axis=-1),tf.unstack(V,axis=-1),tf.unstack(asVec,axis=-1)):
             if self.qinv.wdbry:
@@ -95,16 +95,16 @@ class dictionary_object2D(ppg.PostProcess):
                 #asvec = tf.linalg.matvec(self.dhmul.Dfprev,u,adjoint_a=True)
                 eigvals,eigvecs = rank2eigen(v,asvec,self.epsilon) # assymmetric vector
             for ii in range(2):
-                self.qinv.L = self.qinv.L.assign(tfr.cholesky_update(self.qinv.L,eigvecs[ii],eigvals[ii]))
-        return asVec
+                L = self.qinv.L.assign(tfr.cholesky_update(L,eigvecs[ii],eigvals[ii]))
+        return L,asVec
 
-    def _update_decomposition(self,U,V):
-        self.qinv.L = self._rank1_updates(U,V)
-        asVec = self._rank2_updates(U,V)
+    def _update_decomposition(self,U,V,Dfprev,L):
+        L = self._rank1_updates(U,V,L)
+        L,asVec = self._rank2_updates(U,V,Dfprev,L)
         # Update dictionary
         with tf.control_dependencies([asVec]):
-            self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.dhmul.Dfprev + U @ conj_tp(V))
-        return self.dhmul.Dfprev
+            Dfprev = self.dhmul.Dfprev.assign_add(U @ conj_tp(V))
+        return Dfprev,L
 
 class dictionary_object2D_init(dictionary_object2D):
     def __init__(self,fftSz,D,rho,lraParam = {},epsilon=1e-6,*args,**kwargs):
@@ -136,11 +136,9 @@ class dictionary_object2D_init(dictionary_object2D):
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
         D = self.get_constrained_D(self.dhmul.Df)
-        self.D.assign(D)
-        self.R.assign(self.computeR(D))
         self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D))
-        Df = self._update_decomposition()
-        self.dhmul.Df.assign(Df)
+        Df,self.qinv.L = self._update_decomposition()
+        return [self.D.assign(D),self.R.assign(self.computeR(D)),self.dhmul.Df.assign(Df),self.qinv.L]
 
     def _update_decomposition(self,U=None,V=None):
         if self.qinv.wdbry:
@@ -149,17 +147,17 @@ class dictionary_object2D_full(dictionary_object2D):
         else:
             idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_a = True))
-        self.qinv.L = self.qinv.L.assign(L)
-        return self.dhmul.Dfprev
+        L = self.qinv.L.assign(L)
+        return self.dhmul.Dfprev,L
 
 class dictionary_object2D_init_full(dictionary_object2D_init):
     def _dict_update(self):
         D = self.get_constrained_D(self.dhmul.Df)
-        self.D.assign(D)
-        self.R.assign(self.computeR(D))
+        self.D = self.D.assign(D)
+        self.R = self.R.assign(self.computeR(D))
         self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D))
-        Df = self._update_decomposition()
-        self.dhmul.Df.assign(Df)
+        Df,self.qinv.L = self._update_decomposition()
+        return [self.D.assign(D),self.R.assign(self.computeR(D)),self.dhmul.Df.assign(Df),self.qinv.L]
 
     def _update_decomposition(self,U=None,V=None):
         if self.qinv.wdbry:
@@ -168,8 +166,8 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         else:
             idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Dfprev,b = self.dhmul.Dfprev,adjoint_a = True))
-        self.qinv.L = self.qinv.L.assign(L)
-        return self.dhmul.Dfprev
+        L = self.qinv.L.assign(L)
+        return self.dhmul.Dfprev,L
 
 
 
@@ -477,8 +475,8 @@ def rank2eigen(U,V,epsilon=1e-5):
     vecPlus = tf.where(tf.abs(rootRadicand) > epsilon,vecPlus,U)
     vecMinus = tf.where(tf.abs(rootRadicand) > epsilon,vecMinus,-tf.math.divide_no_nan(uhv,uhu)*U + V)
         
-    vecPlus = tf.math.l2_normalize(vecPlus,epsilon=epsilon)
-    vecMinus = tf.math.l2_normalize(vecMinus,epsilon=epsilon)
+    vecPlus = tf.math.l2_normalize(vecPlus,axis=-1,epsilon=epsilon)
+    vecMinus = tf.math.l2_normalize(vecMinus,axis=-1,epsilon=epsilon)
     valPlus = tf.reshape(valPlus,valPlus.shape[:-1])
     valMinus = tf.reshape(valMinus,valMinus.shape[:-1])
     return ((valPlus,valMinus),(vecPlus,vecMinus))

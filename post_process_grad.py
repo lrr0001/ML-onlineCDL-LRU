@@ -6,10 +6,13 @@ class PostProcess:
 class Model_PostProcess(tf.keras.Model):
     def train_step(self,data):
         myoutputs = tf.keras.Model.train_step(self,data)
+        update_ops = []
         for tv in self.trainable_variables:
             if tv.name in PostProcess.update:
-                PostProcess.update[tv.name]()
-        return myoutputs
+                update_ops += PostProcess.update[tv.name]()
+        with tf.control_dependencies(update_ops):
+            return myoutputs
+
 
 class Model_record_grad(tf.keras.Model):
     def __init__(self,*args,**kwargs):

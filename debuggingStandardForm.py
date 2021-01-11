@@ -52,4 +52,26 @@ optimizerA.apply_gradients(zip(grad,modelA.trainable_variables))
 
 optimizerB.apply_gradients(zip(grad2,modelB.trainable_variables))
 
-modelB._dict_update()
+dictObj._dict_update()
+dictObj2._dict_update()
+currMatL = tf.linalg.matmul(dictObj.qinv.L,dictObj.qinv.L,adjoint_b=True)
+currMatL2 = tf.linalg.matmul(dictObj2.qinv.L,dictObj2.qinv.L,adjoint_b=True)
+
+tf.math.reduce_max(tf.abs(currMatL - currMatL2))
+#    <tf.Tensor: shape=(), dtype=float64, numpy=1400.6883582508476>
+
+
+
+Dnew = dictObj.get_constrained_D(dictObj.dhmul.Df)
+theUpdate = Dnew - dictObj.D
+U,V,approx = fctr.stack_svd(theUpdate,5,**lraParam)
+Uf = fctr.complexNum(U)
+Vf = tf.math.conj(transf.fft2d_inner(fftSz)(V))
+
+# verify currect decomposition
+idmat = tf.eye(num_rows = nof,batch_shape= (1,1,1),dtype = dtype)
+currMatDf = rho*idmat + tf.linalg.matmul(dictObj.dhmul.Dfprev,dictObj.dhmul.Dfprev,adjoint_a = True)
+currMatL = tf.linalg.matmul(dictObj.qinv.L,dictObj.qinv.L,adjoint_b=True)
+# compute matrix after rank-1 updates
+
+# verify decomposition post-rank-1 updates
