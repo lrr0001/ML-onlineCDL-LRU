@@ -6,7 +6,7 @@ import post_process_grad as ppg
 import tf_rewrites as tfr
 
 class dictionary_object2D(ppg.PostProcess):
-    def __init__(self,fltrSz,fftSz,noc,nof,rho,lraParam = {},epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
+    def __init__(self,fltrSz,fftSz,noc,nof,rho,name,lraParam = {},epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
         self.dtype = dtype
         self.fftSz = fftSz
         self.noc = noc
@@ -18,11 +18,11 @@ class dictionary_object2D(ppg.PostProcess):
 
         Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof)
 
-        self.dhmul = DhMul(Df,*args,dtype=self.dtype,**kwargs)
-        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,**kwargs)
-        self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,**kwargs)
+        self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
+        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + 'dmul',**kwargs)
+        self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,name=name + 'qinv',**kwargs)
 
-        ppg.PostProcess.update[self.dhmul.varname] = self._dict_update
+        ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
     def init_dict(self,fltrSz,fftSz,noc,nof):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
@@ -107,7 +107,7 @@ class dictionary_object2D(ppg.PostProcess):
         return Dfprev,L
 
 class dictionary_object2D_init(dictionary_object2D):
-    def __init__(self,fftSz,D,rho,lraParam = {},epsilon=1e-6,*args,**kwargs):
+    def __init__(self,fftSz,D,rho,name,lraParam = {},epsilon=1e-6,*args,**kwargs):
         self.dtype = transf.complexify_dtype(D.dtype)
         self.fftSz = fftSz
         self.noc = D.shape[-2]
@@ -119,11 +119,11 @@ class dictionary_object2D_init(dictionary_object2D):
 
         Df = self.init_dict(fftSz=fftSz,D=D)
 
-        self.dhmul = DhMul(Df,*args,dtype=self.dtype,**kwargs)
-        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,**kwargs)
-        self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,**kwargs)
+        self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
+        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + '/dmul',**kwargs)
+        self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=name + '/qinv',**kwargs)
 
-        ppg.PostProcess.update[self.dhmul.varname] = self._dict_update
+        ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
     def init_dict(self,fftSz,D):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
@@ -260,8 +260,9 @@ class DMul(tf.keras.layers.Layer):
 class DhMul(tf.keras.layers.Layer):
     def __init__(self,Df,*args,dtype=tf.complex64,**kwargs):
         super().__init__(*args,**kwargs)
-        self.Dfprev = tf.Variable(initial_value=tf.identity(Df),trainable=False,dtype=dtype)
-        self.Df = tf.Variable(initial_value=tf.identity(self.Dfprev),trainable=True)
+        with tf.name_scope(self.name):
+            self.Dfprev = tf.Variable(initial_value=tf.identity(Df),trainable=False,dtype=dtype)
+            self.Df = tf.Variable(initial_value=tf.identity(self.Dfprev),trainable=True)
         self.varname = self.Df.name
 
     def call(self, inputs):

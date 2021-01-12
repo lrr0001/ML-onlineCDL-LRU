@@ -2,6 +2,10 @@ import tensorflow as tf
 
 class PostProcess:
     update = {}
+    def add_update(varName,update_fun):
+        assert varName not in PostProcess.update, "Update function already exists for %r; variable name must be unique." % varName
+        PostProcess.update[varName] = update_fun
+
 
 class Model_PostProcess(tf.keras.Model):
     def train_step(self,data):
@@ -12,7 +16,6 @@ class Model_PostProcess(tf.keras.Model):
                 update_ops += PostProcess.update[tv.name]()
         with tf.control_dependencies(update_ops):
             return myoutputs
-
 
 class Model_record_grad(tf.keras.Model):
     def __init__(self,*args,**kwargs):
