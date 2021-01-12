@@ -1,7 +1,5 @@
 import tensorflow as tf
 
-
-# This function has not been tested.
 def randomized_svd(A, n_components, n_oversamples=10, n_iter='auto',
                    power_iteration_normalizer='auto', transpose='auto'):
     """ This code was adapted from the randomized_svd function from scikit-learn library.

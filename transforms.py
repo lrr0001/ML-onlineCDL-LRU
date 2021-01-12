@@ -26,15 +26,4 @@ class ifft2d_inner(fft2d):
     def call(self,inputs):
         return switch_spatial_and_channelfltr()(ifft2d(self.fftSz)(switch_spatial_and_channelfltr()(inputs)))
 
-def complexify_dtype(dtype):
-    if dtype.is_floating:
-        if dtype == tf.float16:
-            return tf.complex64
-        if dtype == tf.float32:
-            return tf.complex64
-        if dtype == tf.float64:
-            return tf.complex128
-    elif dtype.is_complex:
-        return tf.dtype
-    else:
-        ValueError('complexify_dtype only accepts floating point or complex floating point tensorflow data-type objects.')
+

@@ -1,31 +1,5 @@
-import tensorflow_probability as tfpp
 import tensorflow as tf
-
-SKIP_DTYPE_CHECKS = False
-
-
-#def common_dtype(args_list, dtype_hint=None):
-#  """Returns explict dtype from `args_list` if there is one."""
-#  dtype = None
-#  seen = []
-#  for a in tf.nest.flatten(args_list):
-#    if hasattr(a, 'dtype') and a.dtype:
-#      dt = as_numpy_dtype(a.dtype)
-#      seen.append(dt)
-#    else:
-#      seen.append(None)
-#      continue
-#    if dtype is None:
-#      dtype = dt
-#    elif dtype != dt:
-#      if SKIP_DTYPE_CHECKS:
-#        dtype = (np.ones([2], dtype) + np.ones([2], dt)).dtype
-#      else:
-#        raise TypeError(
-#            'Found incompatible dtypes, {} and {}. Seen so far: {}'.format(
-#                dtype, dt, seen))
-#  return base_dtype(dtype_hint) if dtype is None else base_dtype(dtype)
-
+import util
 
 def broadcast_shape(x_shape, y_shape):
   """Computes the shape of a broadcast.
@@ -49,21 +23,6 @@ def broadcast_shape(x_shape, y_shape):
   return tf.broadcast_static_shape(
       tf.TensorShape(x_shape_static), tf.TensorShape(y_shape_static))
 
-def cmplx_sqr(x):
-  return x*tf.math.conj(x)
-
-def rotate_dims_right(x,r = None):
-  """Swap the 1st and last dimensions.
-  ```
-  """
-  if r is None:
-    r = tf.rank(x)
-  return tf.transpose(x,perm=tf.concat((tf.range(r-1,r),tf.range(0,r - 1)),axis=0))
-
-def rotate_dims_left(x,r = None):
-  if r is None:
-    r = tf.rank(x)
-  return tf.transpose(x,perm=tf.concat((tf.range(1,r),tf.range(0,1)),axis=0))
 
 
 def cholesky_update(chol, update_vector, multiplier=1., name=None):
@@ -130,11 +89,11 @@ def cholesky_update(chol, update_vector, multiplier=1., name=None):
 
       # Line 4
       new_diagonal_member = tf.math.sqrt(
-          tf.math.square(diagonal_member) + multiplier / b * cmplx_sqr(
+          tf.math.square(diagonal_member) + multiplier / b * util.cmplx_sqr(
               omega_at_index))
       # `scaling_factor` is the same as `gamma` on Line 5.
       scaling_factor = (tf.math.square(diagonal_member) * b +
-                        multiplier * cmplx_sqr(omega_at_index))
+                        multiplier * util.cmplx_sqr(omega_at_index))
 
       # The following updates are the same as the for loop in lines 6-8.
       omega = omega - (omega_at_index / diagonal_member)[..., tf.newaxis] * col
@@ -142,12 +101,12 @@ def cholesky_update(chol, update_vector, multiplier=1., name=None):
           col / diagonal_member[..., tf.newaxis] +
           (multiplier * tf.math.conj(omega_at_index) / scaling_factor)[
               ..., tf.newaxis] * omega)
-      b = b + multiplier * cmplx_sqr(omega_at_index / diagonal_member)
+      b = b + multiplier * util.cmplx_sqr(omega_at_index / diagonal_member)
       return new_diagonal_member, new_col, omega, b
 
     # We will scan over the columns.
-    chol = rotate_dims_right(chol)
-    chol_diag = rotate_dims_right(chol_diag)
+    chol = util.rotate_dims_right(chol)
+    chol_diag = util.rotate_dims_right(chol_diag)
     new_diag, new_chol, _, _ = tf.scan(
         fn=compute_new_column,
         elems=(tf.range(0, tf.shape(chol)[0]), chol_diag, chol),
@@ -156,7 +115,7 @@ def cholesky_update(chol, update_vector, multiplier=1., name=None):
             tf.zeros_like(chol[0, ...]),
             update_vector,
             tf.ones_like(multiplier)))
-    new_chol = rotate_dims_left(new_chol)
-    new_diag = rotate_dims_left(new_diag)
+    new_chol = util.rotate_dims_left(new_chol)
+    new_diag = util.rotate_dims_left(new_diag)
     new_chol = tf.linalg.set_diag(new_chol, new_diag)
     return new_chol

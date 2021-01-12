@@ -4,6 +4,7 @@ import transforms as transf
 import numpy as np
 import post_process_grad as ppg
 import tf_rewrites as tfr
+import util
 
 class dictionary_object2D(ppg.PostProcess):
     def __init__(self,fltrSz,fftSz,noc,nof,rho,name,lraParam = {},epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
@@ -60,7 +61,7 @@ class dictionary_object2D(ppg.PostProcess):
         self.R = self.R.assign(self.computeR(self.D))
         
         # Compute DFT (The conjugate is necessary because F{A} = F{U}F{V}^T
-        Uf = complexNum(U)
+        Uf = util.complexNum(U)
         Vf = tf.math.conj(transf.fft2d_inner(self.fftSz)(V))
 
         # Update Decomposition and Frequency-Domain Dictionary
@@ -84,18 +85,18 @@ class dictionary_object2D(ppg.PostProcess):
     def _rank2_updates(self,U,V,Dfprev,L):
         if self.qinv.wdbry:
             asVec = tf.linalg.matmul(Dfprev,V)
+            asVec = util.rotate_dims_right(asVec)
+            Ushifted = util.rotate_dims_right(U)
+            eigvals,eigvecs = rank2eigen(Ushifted,asVec,self.epsilon)
         else:
             asVec = tf.linalg.matmul(Dfprev,U,adjoint_a = True)
-        # rank-2 Hermitian updates
-        for u,v,asvec in zip(tf.unstack(U,axis=-1),tf.unstack(V,axis=-1),tf.unstack(asVec,axis=-1)):
-            if self.qinv.wdbry:
-                #asvec = tf.linalg.matvec(self.dhmul.Dfprev,v) #assymmetic vector
-                eigvals,eigvecs = rank2eigen(u,asvec,self.epsilon)
-            else:
-                #asvec = tf.linalg.matvec(self.dhmul.Dfprev,u,adjoint_a=True)
-                eigvals,eigvecs = rank2eigen(v,asvec,self.epsilon) # assymmetric vector
-            for ii in range(2):
-                L = self.qinv.L.assign(tfr.cholesky_update(L,eigvecs[ii],eigvals[ii]))
+            asVec = util.rotate_dims_right(asVec)
+            Vshifted = util.rotate_dims_right(V)
+            eigvals,eigvecs = rank2eigen(Vshifted,asVec,self.epsilon)
+
+        for vals,vecs in zip(eigvals,eigvecs):
+            for val,vec in zip(tf.unstack(vals,axis=0),tf.unstack(vecs,axis=0)):
+                L = self.qinv.L.assign(tfr.cholesky_update(L,vec,val))
         return L,asVec
 
     def _update_decomposition(self,U,V,Dfprev,L):
@@ -103,12 +104,12 @@ class dictionary_object2D(ppg.PostProcess):
         L,asVec = self._rank2_updates(U,V,Dfprev,L)
         # Update dictionary
         with tf.control_dependencies([asVec]):
-            Dfprev = self.dhmul.Dfprev.assign_add(U @ conj_tp(V))
+            Dfprev = self.dhmul.Dfprev.assign_add(U @ util.conj_tp(V))
         return Dfprev,L
 
 class dictionary_object2D_init(dictionary_object2D):
     def __init__(self,fftSz,D,rho,name,lraParam = {},epsilon=1e-6,*args,**kwargs):
-        self.dtype = transf.complexify_dtype(D.dtype)
+        self.dtype = util.complexify_dtype(D.dtype)
         self.fftSz = fftSz
         self.noc = D.shape[-2]
         self.nof = D.shape[-1]
@@ -194,15 +195,15 @@ class QInv(tf.keras.layers.Layer):
                     ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
                     if self.wdbry:
                         Dhy = self.dhmul(y)
-                        DhyH = conj_tp(Dhy)
+                        DhyH = util.conj_tp(Dhy)
                         Dhainvdg = self.dhmul(ainvdg)
-                        DhainvdgH = conj_tp(Dhainvdg)
+                        DhainvdgH = util.conj_tp(Dhainvdg)
                         gradD = -ainvdg*DhyH - y*DhainvdgH
                     else:
                         Dy = self.dmul(y)
                         Dainvdg = self.dmul(ainvdg)
-                        yH = conj_tp(y)
-                        ainvdgH = conj_tp(ainvdg)
+                        yH = util.conj_tp(y)
+                        ainvdgH = util.conj_tp(ainvdg)
                         gradD = -Dy*ainvdgH - Dainvdg*yH
                     return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
                 return tf.identity(y),grad
@@ -455,8 +456,7 @@ def randomized_range_finder(A, rangeSize, n_iter,
     Q, _ = tf.linalg.qr(A @ Q2)
     return Q
 
-def complexNum(x):
-    return tf.complex(x,tf.cast(0.0,dtype = x.dtype))
+
 
 def ifft_trunc_normalize(fltrSz,fftSz,noc,Df):
     D = transf.ifft2d_inner(fftSz)(Df)
@@ -467,12 +467,12 @@ def rank2eigen(U,V,epsilon=1e-5):
     vhv = tf.math.reduce_sum(tf.math.conj(V)*V,axis=-1,keepdims=True)
     uhu = tf.math.reduce_sum(tf.math.conj(U)*U,axis=-1,keepdims=True)
     uhv = tf.math.reduce_sum(tf.math.conj(U)*V,axis=-1,keepdims=True)
-    rootRadicand = tf.math.sqrt(vhv*uhu - complexNum(tf.math.imag(uhv)**2))
+    rootRadicand = tf.math.sqrt(vhv*uhu - util.complexNum(tf.math.imag(uhv)**2))
         
-    valPlus = complexNum(tf.math.real(uhv)) + rootRadicand
-    valMinus = complexNum(tf.math.real(uhv)) - rootRadicand
-    vecPlus = vhv*U + (1j*complexNum(tf.math.imag(uhv)) + rootRadicand)*V
-    vecMinus = vhv*U + (1j*complexNum(tf.math.imag(uhv))  - rootRadicand)*V
+    valPlus = util.complexNum(tf.math.real(uhv)) + rootRadicand
+    valMinus = util.complexNum(tf.math.real(uhv)) - rootRadicand
+    vecPlus = vhv*U + (1j*util.complexNum(tf.math.imag(uhv)) + rootRadicand)*V
+    vecMinus = vhv*U + (1j*util.complexNum(tf.math.imag(uhv))  - rootRadicand)*V
     vecPlus = tf.where(tf.abs(rootRadicand) > epsilon,vecPlus,U)
     vecMinus = tf.where(tf.abs(rootRadicand) > epsilon,vecMinus,-tf.math.divide_no_nan(uhv,uhu)*U + V)
         
@@ -495,9 +495,5 @@ def stack_svd(x,r,**kwargs):
     V = tf.reshape(V,tuple([x.shape[ii] for ii in forwardPerm[1:]]) + (V.shape[-1],))
     return U,V,approx
 
-def conj_tp(x):
-    return tf.transpose(x,perm=(0,1,2,4,3),conjugate=True)
 
-def addDim(x):
-    return tf.reshape(x,shape=x.shape + (1,))
 
