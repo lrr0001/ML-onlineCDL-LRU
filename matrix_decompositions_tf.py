@@ -71,10 +71,9 @@ class dictionary_object2D(ppg.PostProcess):
     def _rank1_updates(self,U,V,L):
          # rank-1 Hermitian updates        
         if self.qinv.wdbry:
-            # Redundant Computation: This is also computed in the rank-2 eigendecomposition.
-            VhV = tf.math.reduce_sum(tf.math.conj(V)*V,axis=3,keepdims=False)
-            for u,vhv in zip(tf.unstack(U,axis=-1),tf.unstack(VhV,axis=-1)):
-                L = self.qinv.L.assign(tfr.cholesky_update(L,u,vhv))
+            eigvals,eigvecs = tf.linalg.eigh(tf.linalg.matmul(V,V,adjoint_a=True))
+            for val,vec in zip(tf.unstack(eigvals,axis=-1),tf.unstack(tf.linalg.matmul(U,eigvecs),axis=-1)):
+                L = self.qinv.L.assign(tfr.cholesky_update(L,vec,val))
         else:
             # Redundant Computation: This is also computed in the rank-2 eigendecomposition
             UhU = tf.math.reduce_sum(tf.math.conj(U)*U,axis=3,keepdims=False) # conjugate unnecessary: U is real.
@@ -368,7 +367,6 @@ def randomized_svd(A, n_components=3, n_oversamples=10, n_iter='auto',
     if transpose:
         # this implementation is a bit faster with smaller shape[1]
         A = tf.transpose(A)
-
     if Nrand < M and Nrand < N:
         Q = randomized_range_finder(
             A, rangeSize=Nrand, n_iter=n_iter,
@@ -453,7 +451,7 @@ def randomized_range_finder(A, rangeSize, n_iter,
         # LU factorization requires square matrix
         elif power_iteration_normalizer == 'LU':
             AQ = A @ Q2
-            Q, _ = tf.linalg.lu(tf.matmul(AQ,AQ,adjoint_a = True))
+            Q, _ = tf.linalg.lu(tf.linalg.matmul(AQ,AQ,adjoint_a = True))
             Q2 = Q2 @ Q
         elif power_iteration_normalizer == 'QR':
             Q, _ = tf.linalg.qr(A @ Q2)
