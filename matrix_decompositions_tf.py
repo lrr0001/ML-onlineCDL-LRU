@@ -1,5 +1,4 @@
 import tensorflow as tf
-#import tensorflow_probability as tfp
 import transforms as transf
 import numpy as np
 import post_process_grad as ppg
@@ -68,6 +67,14 @@ class dictionary_object2D(ppg.PostProcess):
         Df,self.qinv.L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
         return [self.D,self.R,self.dhmul.Df.assign(Df),self.qinv.L]
 
+    def _update_decomposition(self,U,V,Dfprev,L):
+        L = self._rank1_updates(U,V,L)
+        L,asVec = self._rank2_updates(U,V,Dfprev,L)
+        # Update dictionary
+        with tf.control_dependencies([asVec]):
+            Dfprev = self.dhmul.Dfprev.assign_add(U @ util.conj_tp(V))
+        return Dfprev,L
+
     def _rank1_updates(self,U,V,L):
          # rank-1 Hermitian updates        
         if self.qinv.wdbry:
@@ -80,6 +87,11 @@ class dictionary_object2D(ppg.PostProcess):
             for v,uhu in zip(tf.unstack(V,axis=-1),tf.unstack(UhU,axis=-1)):
                 L = self.qinv.L.assign(tfr.cholesky_update(L,v,uhu))
         return L
+
+    def _rank2_updates(self,U,V,Dfprev,L):
+        eigvals,eigvecs,asVec = self._get_eigen_decomp(U,V,Dfprev)
+        L = self._eig_chol_update(eigvals,eigvecs,L)
+        return L,asVec
 
     def _get_eigen_decomp(self,U,V,Dfprev):
         if self.qinv.wdbry:
@@ -94,24 +106,11 @@ class dictionary_object2D(ppg.PostProcess):
             eigvals,eigvecs = rank2eigen(Vshifted,asVec,self.epsilon)
         return eigvals,eigvecs,asVec
 
-    def _eig_chol_update(self,eigvals,eigvecs,L2):
+    def _eig_chol_update(self,eigvals,eigvecs,L):
         for vals,vecs in zip(eigvals,eigvecs):
             for val,vec in zip(tf.unstack(vals,axis=0),tf.unstack(vecs,axis=0)):
-                L2 = self.qinv.L.assign(tfr.cholesky_update(L2,vec,val))
-        return L2        
-
-    def _rank2_updates(self,U,V,Dfprev,L2):
-        eigvals,eigvecs,asVec = self._get_eigen_decomp(U,V,Dfprev)
-        L3 = self._eig_chol_update(eigvals,eigvecs,L2)
-        return L3,asVec
-
-    def _update_decomposition(self,U,V,Dfprev,L):
-        L2 = self._rank1_updates(U,V,L)
-        L3,asVec = self._rank2_updates(U,V,Dfprev,L2)
-        # Update dictionary
-        with tf.control_dependencies([asVec]):
-            Dfprev = self.dhmul.Dfprev.assign_add(U @ util.conj_tp(V))
-        return Dfprev,L3
+                L = self.qinv.L.assign(tfr.cholesky_update(L,vec,val))
+        return L
 
 class dictionary_object2D_init(dictionary_object2D):
     def __init__(self,fftSz,D,rho,name,lraParam = {},epsilon=1e-6,*args,**kwargs):
@@ -237,23 +236,22 @@ class QInv(tf.keras.layers.Layer):
         self.L = tf.Variable(initial_value = L,trainable=False)
 
 class QInv_auto(tf.keras.layers.Layer):
-    def __init__(self,dhmul,rho,*args,**kwargs):
+    def __init__(self,dhmul,rho,wdbry=False,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.Df = tf.Variable(initial_value=dhmul.Df,trainable=True)
         self.rho = rho
-        self.wdbry = self.Df.shape[-2] < self.Df.shape[-1]
     def call(self,inputs):
-        #if self.wdbry:
-        #    Dx = tf.linalg.matmul(self.Df,inputs)
-        #    idmat = tf.eye(num_rows = self.Df.shape[-2],batch_shape = (1,1,1),dtype = self.Df.dtype)
-        #    ainv = tf.linalg.inv(self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_b=True))
-        #    return 1/self.rho*(inputs - tf.linalg.matmul(self.Df,tf.linalg.matmul(ainv,Dx),adjoint_a = True))
-        #else:
-        idmat = tf.eye(num_rows = self.Df.shape[-1],batch_shape= (1,1,1),dtype = self.Df.dtype)
-        a = self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_a = True)
-        inputs = tf.transpose(inputs,perm=(4,1,2,3,0))
-        x = tf.linalg.solve(a,inputs)
-        return tf.transpose(x,perm = (4,1,2,3,0))
+        if self.wdbry:
+            Dx = tf.linalg.matmul(self.Df,inputs)
+            idmat = tf.eye(num_rows = self.Df.shape[-2],batch_shape = (1,1,1),dtype = self.Df.dtype)
+            ainv = tf.linalg.inv(self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_b=True))
+            return 1/self.rho*(inputs - tf.linalg.matmul(self.Df,tf.linalg.matmul(ainv,Dx),adjoint_a = True))
+        else:
+            idmat = tf.eye(num_rows = self.Df.shape[-1],batch_shape= (1,1,1),dtype = self.Df.dtype)
+            a = self.rho*idmat + tf.linalg.matmul(self.Df,self.Df,adjoint_a = True)
+            inputs = tf.transpose(inputs,perm=(4,1,2,3,0))
+            x = tf.linalg.solve(a,inputs)
+            return tf.transpose(x,perm = (4,1,2,3,0))
 
 class DMul(tf.keras.layers.Layer):
     def __init__(self,dhmul,*args,**kwargs):
@@ -276,8 +274,6 @@ class DhMul(tf.keras.layers.Layer):
         return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
 
 
-
-
 def get_lowrank_approx(A,*args,**kwargs):
     U,s,V = randomized_svd(A,*args,**kwargs)
     if A.shape[1] > A.shape[0]:
@@ -285,8 +281,6 @@ def get_lowrank_approx(A,*args,**kwargs):
     else:
         V = V*tf.cast(tf.reshape(s,(1,-1)),V.dtype)
     return (U,V, tf.linalg.matmul(U,tf.transpose(V,conjugate=True)))
-
-
 
 
 def randomized_svd(A, n_components=3, n_oversamples=10, n_iter='auto',
@@ -499,6 +493,3 @@ def stack_svd(x,r,**kwargs):
     U = tf.reshape(U,(1,)*s + tuple(U.shape))
     V = tf.reshape(V,tuple([x.shape[ii] for ii in forwardPerm[1:]]) + (V.shape[-1],))
     return U,V,approx
-
-
-
