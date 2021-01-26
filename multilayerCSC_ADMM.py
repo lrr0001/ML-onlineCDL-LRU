@@ -1,6 +1,6 @@
 import tensorflow as tf
 import matrix_decompositions_tf as fctr
-def ADMM:
+class ADMM:
     def __init__(self):
         raise NotImplementedError
     def xstep(self):
@@ -16,10 +16,13 @@ def ADMM:
         self.relax()
         self.ystep()
         self.ustep()
-    def solve(self):
-        raise NotImplementedError
+    class ReconstructSignal(tf.keras.layers.Layer):
+        def __init__(self,*args,**kwargs):
+            super().__init__(*args,**kwargs)
+        def call(self,s):
+            raise NotImplementedError
 
-def MultiLayerCSC(ADMM):
+class MultiLayerCSC(ADMM):
     def __init__(self,rho,alpha_init,noL,dtype,*args,**kwargs):
         self.noL = noL
 
@@ -87,7 +90,7 @@ def MultiLayerCSC(ADMM):
             z_over_R = z
         return self.gammaUpdate_layer(gamma_scaled,z_over_R,Ax_relaxed)
 
-def GetNextIterX(tf.keras.layers.Layer):
+class GetNextIterX(tf.keras.layers.Layer):
     '''
       inputs: All must be in frequency domain.
     
@@ -106,7 +109,7 @@ def GetNextIterX(tf.keras.layers.Layer):
         z_prevlayer,z_over_R,gamma_scaled = inputs
         return dictObj.qinv(dictObj.dhmul(zprevlayer) - self.rho*(z_over_R - gamma_scaled))
 
-def GetRelaxedAx(tf.keras.layers.Layer):
+class GetRelaxedAx(tf.keras.layers.Layer):
     def __init__(self,alpha_init,*args,**kwargs):
         super().__init__(*args,**kwargs)
         alpha = tf.Variable(alpha_init,trainable=True)
@@ -116,7 +119,7 @@ def GetRelaxedAx(tf.keras.layers.Layer):
 
 
 
-def GetNextIterZ(tf.keras.layers.Layer):
+class GetNextIterZ(tf.keras.layers.Layer):
     ''' inputs: All must be in spatial domain.
 
        Dx_nextlayer: \mD_{\ell + 1}\vx_{\ell + 1}^{(k + 1)}
@@ -141,7 +144,7 @@ def GetNextIterZ(tf.keras.layers.Layer):
 
 
 
-def GetNextIterZ_lastlayer(tf.keras.layers.Layer):
+class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
     '''
     inputs: All must be in spatial domain.
 
@@ -162,7 +165,7 @@ def GetNextIterZ_lastlayer(tf.keras.layers.Layer):
 
 
 
-def GetNextIterGamma(tf.keras.layers.Layer):
+class GetNextIterGamma(tf.keras.layers.Layer):
     '''
       inputs: All must be in spatial domain.
 
