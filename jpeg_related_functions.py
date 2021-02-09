@@ -2,18 +2,15 @@ import tensorflow as tf
 import math
 import numpy as np
 import transforms as transf
+import optmz
 
-
-class Smooth_JPEG(tf.keras.layers.Layer):
-    def __init__(self,q,lmbda,rho,alpha,noi,fftSz,*args,**kwargs):
+class Smooth_JPEG(optmz.ADMM):
+    def __init__(self,rho,alpha,noi,q,lmbda,fftSz,*args,**kwargs):
         self.q = tf.reshape(q,(1,1,1,64))
-        self.noi = noi
         self.lmbda = lmbda
-        self.rho = rho
-        self.alpha = alpha
         self.fftSz = fftSz
         self.fltr = np.asarray([-1.,1.])
-        super().__init__(*args,**kwargs)
+        super().__init__(rho,alpha,noi,*args,**kwargs)
         self.init_fun()
     def init_fun(self):
         self.W = RGB2JPEG_Coef(dtype=self.dtype)
@@ -24,12 +21,6 @@ class Smooth_JPEG(tf.keras.layers.Layer):
         self.uupdate = GammaUpdate_JPEG(dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
-    def init_vars(self,s):
-        negC = self.get_negative_C(s)
-        y,By = self.init_y(s,negC)
-        u = self.init_u(s)
-        itstats = self.init_itstats(s)
-        return (y,u,By,negC,itstats)
     def init_y(self,s,negC):
         return (self.Wt(negC),negC)
     def init_u(self,s):
@@ -50,30 +41,11 @@ class Smooth_JPEG(tf.keras.layers.Layer):
         return self.yupdate((x,AxplusC,u))
     def ustep(self,u,AxplusC,By):
         return self.uupdate((u,AxplusC,By))
-    def itstats_record(self,x,y,u,Ax,By,negC,itstats):
-        return itstats
-    def solvestep(self,y,u,By,negC,itstats):
-        x,Ax = self.xstep(y,u,By)
-        AxplusC = self.relax(Ax,By,negC)
-        y,By = self.ystep(x,u,AxplusC)
-        u = self.ustep(u,AxplusC,By)
-        itstats = self.itstats_record(x,y,u,Ax,By,negC,itstats)
-        return (y,u,By,itstats)
 
     # Before and After:
-    def preprocess(self,s):
-        return s
     def get_output(self,s,y,u,By,negC,itstats):
         x,Ax = self.xstep(y,u,By)
         return (s - x,x)
-
-    # The Call function    
-    def call(self,s):
-        s = self.preprocess(s)
-        y,u,By,negC,itstats = self.init_vars(s)
-        for ii in range(self.noi):
-            y,u,By,itstats = self.solvestep(y,u,By,negC,itstats)
-        return self.get_output(s,y,u,By,negC,itstats)
 
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
