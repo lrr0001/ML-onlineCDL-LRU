@@ -12,7 +12,7 @@ class Smooth_JPEG(tf.keras.layers.Layer):
         self.rho = rho
         self.alpha = alpha
         self.fftSz = fftSz
-        self.fltr = np.asarray([0.,1.])
+        self.fltr = np.asarray([-1.,1.])
         super().__init__(*args,**kwargs)
         self.init_fun()
     def init_fun(self):
@@ -28,18 +28,21 @@ class Smooth_JPEG(tf.keras.layers.Layer):
         negC = self.get_negative_C(s)
         y,By = self.init_y(s,negC)
         u = self.init_u(s)
-        return (y,u,By,negC)
+        itstats = self.init_itstats(s)
+        return (y,u,By,negC,itstats)
     def init_y(self,s,negC):
-        return (s,negC)
+        return (self.Wt(negC),negC)
     def init_u(self,s):
         return [0.,0.,0.]
     def get_negative_C(self,s):
         Ws = self.W(s)
-        return [self.q*tf.math.round(Ws[channel]/self.q) for channel in range(len(Ws))]
+        return [quantize(Ws[channel],self.q) for channel in range(len(Ws))]
+    def init_itstats(self,s):
+        return []
 
 
     # iterative steps:
-    def xstep(self,y):
+    def xstep(self,y,u,By):
         return (self.xupdate(y),0.)
     def relax(self,Ax,By,negC):
         return self.relaxlayer((negC,By))
@@ -47,28 +50,30 @@ class Smooth_JPEG(tf.keras.layers.Layer):
         return self.yupdate((x,AxplusC,u))
     def ustep(self,u,AxplusC,By):
         return self.uupdate((u,AxplusC,By))
-    def solvestep(self,y,u,By,negC):
-        x,Ax = self.xstep(y)
+    def itstats_record(self,x,y,u,Ax,By,negC,itstats):
+        return itstats
+    def solvestep(self,y,u,By,negC,itstats):
+        x,Ax = self.xstep(y,u,By)
         AxplusC = self.relax(Ax,By,negC)
         y,By = self.ystep(x,u,AxplusC)
         u = self.ustep(u,AxplusC,By)
-        return (y,u,By)
+        itstats = self.itstats_record(x,y,u,Ax,By,negC,itstats)
+        return (y,u,By,itstats)
 
     # Before and After:
     def preprocess(self,s):
         return s
-    def get_output(self,s,y,u,By,negC):
-        x = self.xstep(y)
-        #return (s - x,x)
-        return x
+    def get_output(self,s,y,u,By,negC,itstats):
+        x,Ax = self.xstep(y,u,By)
+        return (s - x,x)
 
     # The Call function    
     def call(self,s):
         s = self.preprocess(s)
-        y,u,By,negC = self.init_vars(s)
+        y,u,By,negC,itstats = self.init_vars(s)
         for ii in range(self.noi):
-            y,u,By = self.solvestep(y,u,By,negC)
-        return self.get_output(s,y,u,By,negC)
+            y,u,By,itstats = self.solvestep(y,u,By,negC,itstats)
+        return self.get_output(s,y,u,By,negC,itstats)
 
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
@@ -93,7 +98,7 @@ class RGB2JPEG_Coef(tf.keras.layers.Layer):
     def call(self,inputs):
         yuv = tf.image.rgb_to_yuv(inputs)
         y,u,v = tf.split(yuv,axis=3,num_or_size_splits=3)
-        y_calibrated = y - 1./2.
+        y_calibrated = y# - 1./2.
         u_ds = self.downsample(u)
         v_ds = self.downsample(v)
         ydcc_blks = tf.nn.conv2d(y_calibrated,self.dct_filters,strides=8,padding='VALID')
@@ -114,13 +119,17 @@ class JPEG_Coef2RGB(tf.keras.layers.Layer):
         y_blks = tf.nn.conv2d(ydcc,self.idct_filters,strides=8,padding='VALID')
         u_ds_blks = tf.nn.conv2d(udcc,self.idct_filters,strides=8,padding='VALID')
         v_ds_blks = tf.nn.conv2d(vdcc,self.idct_filters,strides=8,padding='VALID')
-        y = tf.clip_by_value(tf.nn.depth_to_space(y_blks,block_size=8) + 1./2.,0.,1.)
+        #y = tf.clip_by_value(tf.nn.depth_to_space(y_blks,block_size=8) + 1./2.,0.,1.)
+        y = tf.nn.depth_to_space(y_blks,block_size=8)# + 1./2.
         u_ds = tf.nn.depth_to_space(u_ds_blks,block_size = 8)
         v_ds = tf.nn.depth_to_space(v_ds_blks,block_size = 8)      
-        u = tf.clip_by_value(self.Upsample(u_ds),-0.5,0.5)
-        v = tf.clip_by_value(self.Upsample(v_ds),-0.5,0.5)
+        #u = tf.clip_by_value(self.Upsample(u_ds),-0.5,0.5)
+        u = self.Upsample(u_ds)
+        #v = tf.clip_by_value(self.Upsample(v_ds),-0.5,0.5)
+        v = self.Upsample(v_ds)
         yuv = tf.concat((y,u,v),axis=3)
-        return tf.clip_by_value(tf.image.yuv_to_rgb(yuv),0.,1.)
+        #return tf.clip_by_value(tf.image.yuv_to_rgb(yuv),0.,1.)
+        return tf.image.yuv_to_rgb(yuv)
         
 def get_JPEG_coef_mask(jpegImages,rgb2jpeg_coef_layer,epsilon):
     ydcc_blks,udcc_blks,vdcc_blks = rgb2jpeg_coef_layer(jpegImages)
@@ -145,6 +154,9 @@ def halfqminus(q):
 
 def halfqplus(q):
     return q/2 + 1./510.
+
+def quantize(w,q):
+    return q*tf.math.round(w/q)
 
 class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
     def __init__(self,lmbda,fftSz,fltr1,fltr2,*args,**kwargs):
@@ -181,7 +193,10 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         Wx = self.W(fx)
         r = [-Axminuss[channel] - Wx[channel] - gamma_over_rho[channel] for channel in range(len(Wx))]
         Wdeltaz = [self.qntzn_adjst((Wx[channel],r[channel])) for channel in range(len(Wx))]
-        return (fx + self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz),[self.q*tf.math.round((Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel])/self.q) for channel in range(len(Wx))])
+        z = fx + self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
+        Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
+        QWz = [quantize(Wz[channel],self.q) for channel in range(len(Wz))]
+        return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):
     def __init__(self,*args,**kwargs):
@@ -189,7 +204,6 @@ class GammaUpdate_JPEG(tf.keras.layers.Layer):
     def call(self, inputs):
         gamma_over_rho,Axminuss,QWz = inputs
         return [gamma_over_rho[channel] + Axminuss[channel] + QWz[channel] for channel in range(len(QWz))]
-        
 
 class QuantizationAdjustment(tf.keras.layers.Layer):
     def __init__(self,mu,rho,q,*args,**kwargs):
@@ -199,13 +213,24 @@ class QuantizationAdjustment(tf.keras.layers.Layer):
         self.q = q
     def call(self,inputs):
         Wx,r = inputs
-        #r = -Axminuss - Wx - gamma_over_rho
-        y = Wx + self.rho/(self.mu + self.rho)*r
-        dctelemerror = lambda Wdeltaz: self.mu/2*tf.math.square(self.rho/(self.mu + self.rho)*r + Wdeltaz) + self.rho/2*tf.math.square(-self.mu/(self.mu + self.rho) + self.q*tf.math.round((y + Wdeltaz)/self.q) - y)
+        r_scaled = self.rho/(self.mu + self.rho)*r
+        y = Wx + r_scaled
+        firstTerm = lambda Wdeltaz: self.mu/2*tf.math.square(r_scaled + Wdeltaz)
+        secondTerm = lambda Wdeltaz: self.rho/2*tf.math.square(-self.mu/(self.mu + self.rho) + self.q*tf.math.round((y + Wdeltaz)/self.q) - y)
+        dctelemerror = lambda Wdeltaz:  firstTerm(Wdeltaz) + secondTerm(Wdeltaz)
 
-        candidate1 = - tf.math.sign(r)*tf.math.minimum(self.rho/(self.mu + self.rho)*tf.math.abs(r),tf.math.abs(self.q*tf.math.round(y/self.q) - y - tf.math.sign(r)*self.q*halfqminus(self.q)))
-        candidate2 = self.q*tf.math.round(y/self.q) - halfqplus(self.q)*self.q*tf.math.sign(y - self.q*tf.math.round(y/self.q) - self.rho/(self.mu + self.rho)*r) - y
-        candidate3 = - tf.math.sign(r)*tf.math.minimum(self.rho/(self.mu + self.rho)*tf.math.abs(r),tf.math.abs(self.q*tf.math.round(y/self.q) - y - tf.math.sign(r)*self.q*(1. + halfqminus(self.q))))
+        firstterm_min = -r_scaled
+        secondterm_static = quantize(y,self.q) - y - tf.math.sign(r)*self.q*halfqminus(self.q)
+        secondterm_move = self.q*tf.math.round(y/self.q) - y - tf.math.sign(r)*self.q*(1. + halfqminus(self.q))
+
+        # minimize first term, provided second term unchanged
+        candidate1 = -tf.math.sign(r)*tf.math.minimum(tf.math.abs(firstterm_min),tf.math.abs(secondterm_static))
+        # reduce second term, change first term as little as possible
+        candidate2 = quantize(y,self.q) - halfqplus(self.q)*self.q*tf.math.sign(y - quantize(y,self.q) + firstterm_min) - y
+        # change both terms
+        candidate3 = -tf.math.sign(r)*tf.math.minimum(tf.math.abs(firstterm_min),tf.math.abs(secondterm_move))
+
+        # compare the results of 3 candidates and choose the best one.
         bestcandidate = tf.where(dctelemerror(candidate2) < dctelemerror(candidate1),candidate2,candidate1)
         bestcandidate = tf.where(dctelemerror(candidate3) < dctelemerror(bestcandidate),candidate3,bestcandidate)
         return bestcandidate
