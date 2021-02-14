@@ -10,13 +10,16 @@ class ADMM(tf.keras.layers.Layer):
     # These initializations happen once per input (negC,y,By,u):
     def init_vars(self,s):
         negC = self.get_negative_C(s)
-        y,By = self.init_y(s,negC)
-        u = self.init_u(s)
+        x,Ax = self.init_x(x,negC)
+        y,By = self.init_y(s,x,Ax,negC)
+        u = self.init_u(s,y,By,negC)
         itstats = self.init_itstats(s)
         return (y,u,By,negC,itstats)
-    def init_y(self,s,negC):
+    def init_x(self,s,negC):
         raise NotImplementedError
-    def init_u(self,s):
+    def init_y(self,s,x,Ax,negC):
+        raise NotImplementedError
+    def init_u(self,s,Ax,By,negC):
         raise NotImplementedError
     def get_negative_C(self,s):
         raise NotImplementedError
@@ -25,21 +28,21 @@ class ADMM(tf.keras.layers.Layer):
 
 
     # iterative steps:
-    def xstep(self,y,u,By):
+    def xstep(self,y,u):
         raise NotImplementedError
     def relax(self,Ax,By,negC):
         raise NotImplementedError
-    def ystep(self,x,u,AxplusC):
+    def ystep(self,x,u,Ax_relaxed,negC):
         raise NotImplementedError
-    def ustep(self,u,AxplusC,By):
+    def ustep(self,u,Ax_relaxed,By,negC):
         raise NotImplementedError
     def itstats_record(self,x,y,u,Ax,By,negC,itstats):
         return itstats
     def solvestep(self,y,u,By,negC,itstats):
         x,Ax = self.xstep(y,u,By)
         AxplusC = self.relax(Ax,By,negC)
-        y,By = self.ystep(x,u,AxplusC)
-        u = self.ustep(u,AxplusC,By)
+        y,By = self.ystep(x,u,Ax_relaxed,negC)
+        u = self.ustep(u,Ax_relaxed,By,negC)
         itstats = self.itstats_record(x,y,u,Ax,By,negC,itstats)
         return (y,u,By,itstats)
 

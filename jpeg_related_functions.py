@@ -5,6 +5,7 @@ import transforms as transf
 import optmz
 
 class Smooth_JPEG(optmz.ADMM):
+    # This layer computes a smoothed version of a JPEG-compressed image.
     def __init__(self,rho,alpha,noi,q,lmbda,fftSz,*args,**kwargs):
         self.q = tf.reshape(q,(1,1,1,64))
         self.lmbda = lmbda
@@ -21,9 +22,11 @@ class Smooth_JPEG(optmz.ADMM):
         self.uupdate = GammaUpdate_JPEG(dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
-    def init_y(self,s,negC):
+    def init_x(self,s,negC):
+        return (None,None)
+    def init_y(self,s,x,Ax,negC):
         return (self.Wt(negC),negC)
-    def init_u(self,s):
+    def init_u(self,s,Ax,By,negC):
         return [0.,0.,0.]
     def get_negative_C(self,s):
         Ws = self.W(s)
@@ -33,14 +36,14 @@ class Smooth_JPEG(optmz.ADMM):
 
 
     # iterative steps:
-    def xstep(self,y,u,By):
-        return (self.xupdate(y),0.)
+    def xstep(self,y,u):
+        return (self.xupdate(y))
     def relax(self,Ax,By,negC):
         return self.relaxlayer((negC,By))
-    def ystep(self,x,u,AxplusC):
-        return self.yupdate((x,AxplusC,u))
-    def ustep(self,u,AxplusC,By):
-        return self.uupdate((u,AxplusC,By))
+    def ystep(self,x,u,Ax_relaxed,negC):
+        return self.yupdate((x,Ax_relaxed,u))
+    def ustep(self,u,Ax_relaxed,By,negC):
+        return self.uupdate((u,Ax_relaxed,By))
 
     # Before and After:
     def get_output(self,s,y,u,By,negC,itstats):
@@ -70,10 +73,9 @@ class RGB2JPEG_Coef(tf.keras.layers.Layer):
     def call(self,inputs):
         yuv = tf.image.rgb_to_yuv(inputs)
         y,u,v = tf.split(yuv,axis=3,num_or_size_splits=3)
-        y_calibrated = y# - 1./2.
         u_ds = self.downsample(u)
         v_ds = self.downsample(v)
-        ydcc_blks = tf.nn.conv2d(y_calibrated,self.dct_filters,strides=8,padding='VALID')
+        ydcc_blks = tf.nn.conv2d(y,self.dct_filters,strides=8,padding='VALID')
         udcc_blks = tf.nn.conv2d(u_ds,self.dct_filters,strides=8,padding='VALID')
         vdcc_blks = tf.nn.conv2d(v_ds,self.dct_filters,strides=8,padding='VALID')
         return (ydcc_blks,udcc_blks,vdcc_blks) # discrete cosine coefficients
@@ -91,8 +93,8 @@ class JPEG_Coef2RGB(tf.keras.layers.Layer):
         y_blks = tf.nn.conv2d(ydcc,self.idct_filters,strides=8,padding='VALID')
         u_ds_blks = tf.nn.conv2d(udcc,self.idct_filters,strides=8,padding='VALID')
         v_ds_blks = tf.nn.conv2d(vdcc,self.idct_filters,strides=8,padding='VALID')
-        #y = tf.clip_by_value(tf.nn.depth_to_space(y_blks,block_size=8) + 1./2.,0.,1.)
-        y = tf.nn.depth_to_space(y_blks,block_size=8)# + 1./2.
+        #y = tf.clip_by_value(tf.nn.depth_to_space(y_blks,block_size=8),0.,1.)
+        y = tf.nn.depth_to_space(y_blks,block_size=8)
         u_ds = tf.nn.depth_to_space(u_ds_blks,block_size = 8)
         v_ds = tf.nn.depth_to_space(v_ds_blks,block_size = 8)      
         #u = tf.clip_by_value(self.Upsample(u_ds),-0.5,0.5)
@@ -128,6 +130,7 @@ def halfqplus(q):
     return q/2 + 1./510.
 
 def quantize(w,q):
+    # This may need to be modified to accomodate the Y-channel offset (I don't subtract off 0.5 from the Y channel when converting to dct coefficients because doing so would destroy the homogeneity property for mappings between RGB and dct coef domains.)
     return q*tf.math.round(w/q)
 
 class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
