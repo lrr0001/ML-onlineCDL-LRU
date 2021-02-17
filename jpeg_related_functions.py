@@ -36,8 +36,8 @@ class Smooth_JPEG(optmz.ADMM):
 
 
     # iterative steps:
-    def xstep(self,y,u):
-        return (self.xupdate(y))
+    def xstep(self,y,u,By,negC):
+        return (self.xupdate(y),0.)
     def relax(self,Ax,By,negC):
         return self.relaxlayer((negC,By))
     def ystep(self,x,u,Ax_relaxed,negC):
@@ -47,8 +47,8 @@ class Smooth_JPEG(optmz.ADMM):
 
     # Before and After:
     def get_output(self,s,y,u,By,negC,itstats):
-        x,Ax = self.xstep(y,u,By)
-        return (s - x,x)
+        x,Ax = self.xstep(y,u,By,negC)
+        return (x,negC)
 
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
