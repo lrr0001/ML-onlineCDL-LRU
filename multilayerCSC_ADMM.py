@@ -7,7 +7,7 @@ import util
 import numpy as np
 
 class MultiLayerCSC(optmz.ADMM):
-    def __init__(self,rho,alpha_init,mu_init,q,fltrSz,fftSz,noc,nof,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
+    def __init__(self,rho,alpha_init,mu_init,qY,qUV,fltrSz,fftSz,noc,nof,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
         rho = tf.cast(rho,dtype = cmplxdtype.real_dtype)
@@ -15,9 +15,10 @@ class MultiLayerCSC(optmz.ADMM):
         self.noL = noL
         super().__init__(rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
         self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,dtype=dtype)
-        q = tf.reshape(q,(1,1,1,64))
-        self.initializeLayers(rho,mu_init,q,noL,fltrSz,fftSz,noc,nof,lraParam,cmplxdtype)
-    def initializeLayers(self,rho,mu_init,q,noL,fltrSz,fftSz,noc,nof,lraParam,cmplxdtype):
+        qY = tf.reshape(qY,(1,1,1,64))
+        qUV = tf.reshape(qUV,(1,1,1,64))
+        self.initializeLayers(rho,mu_init,qY,qUV,noL,fltrSz,fftSz,noc,nof,lraParam,cmplxdtype)
+    def initializeLayers(self,rho,mu_init,qY,qUV,noL,fltrSz,fftSz,noc,nof,lraParam,cmplxdtype):
         b_init = 0.
         self.dictObj = []
         self.updateX_layer = []
@@ -29,7 +30,7 @@ class MultiLayerCSC(optmz.ADMM):
             self.FFT.append(transf.fft2d_inner(fftSz[ii]))
             self.IFFT.append(transf.ifft2d_inner(fftSz[ii]))
 
-        self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype) # does casting affect the variable itself? Important to check.
+        self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype)
         self.updateZ_layer = [[],]*(noL - 1)
         self.updateGamma_layer = GetNextIterGamma(dtype=cmplxdtype)
         self.updateZ_lastlayer = GetNextIterZ_lastlayer(rho,mu_init,self.dictObj[noL - 1],b_init,dtype=cmplxdtype.real_dtype)
@@ -39,8 +40,8 @@ class MultiLayerCSC(optmz.ADMM):
             mu = self.updateZ_layer[ii].mu
         W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         Wt = jrf.JPEG_Coef2RGB(dtype=cmplxdtype.real_dtype)
-        self.updatev = jrf.ZUpdate_JPEG(mu,rho,q,W,Wt,dtype = cmplxdtype.real_dtype)
-        self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, q,dtype=cmplxdtype.real_dtype)
+        self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,W,Wt,dtype = cmplxdtype.real_dtype)
+        self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, dtype=cmplxdtype.real_dtype)
         self.updateeta = jrf.GammaUpdate_JPEG(dtype=cmplxdtype.real_dtype)
 
 
@@ -116,6 +117,18 @@ class MultiLayerCSC(optmz.ADMM):
         eta = self.updateEta(eta,AzeroplusC,Bv)
         return (eta,gamma)
 
+    def evaluateLagrangian(self,x,y,Ax,By,gamma):
+        recErr = self.reconstructionErrors(x,y)
+        penaltyErr = self.penaltyErrors(x,y)
+        cnstrErr = self.constraintErrors(Ax,By,gamma)
+        return recErr + penaltyErr + cnstrErr
+    def reconstructionErrors(self,x,y):
+        raise NotImplementedError
+    def penaltyErrors(x,y):
+        raise NotImplementedError
+    def constraintErrors(Ax,By,gamma):
+        raise NotImplementedError
+
     # Low-level Initialization Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
     def xinit(self,xprev,layer):
         if layer == 0:
@@ -181,6 +194,48 @@ class MultiLayerCSC(optmz.ADMM):
         return self.updateGamma_layer((gamma_scaled,z_over_R,Ax_relaxed))
     def updateEta(self,eta_over_rho,AzeroplusC,Bv):
         return self.updateeta((eta_over_rho,AzeroplusC,Bv))
+
+
+    # Low-level augmented Langrangian evaluation:
+    def reconstructionTerm(self,z,Dx,layer):
+        if layer < self.noL - 1:
+            mu = self.updateZ_layer[layer].mu
+        else:
+            mu = self.updateZ_lastlayer.mu
+        zminusDx = z - Dx
+        return mu/2*tf.reduce_sum(tf.conj(zminusDx)*zminusDx) # If this is in frequency, I may need to 'normalize'.
+    def nonnegativeCheck(self,z):
+        assert(tf.all(z >= 0.))
+
+    def penaltyTerm(self,z,layer):
+        if layer < self.noL - 1:
+            return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer.b*z))
+        else:
+            return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.max(z,0.)))/self.rho/self.updateZ_lastlayer.mu
+    def jpegConstraint(self,QWz,QWs,eta_over_rho):
+        aug_cnstrnt_term = [QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))]
+        return self.rho/2*sum([tf.math_reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_constrnt_term[channel])) for channel in range(len(QWs))])
+    def jpegConstraint_relaxed(self,Ax,Bv,eta_over_rho):
+        aug_cnstrnt_term = [Ax[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))]
+        return self.rho/2*sum([tf.math_reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_constrnt_term[channel])) for channel in range(len(QWs))])
+    def zxConstraint(self,x_over_R,z_over_R,gamma_over_rho,layer):
+        if layer < self.noL - 1:
+            mu = self.updateZ_layer[layer].mu
+        else:
+            mu = self.updateZ_lastlayer.mu
+        rho = self.rho
+        sum_of_terms = z_over_R - x_over_R + gamma_over_R
+        return rho*mu/2*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms) # if this is in frequency, I may need to 'normalize'.
+    def zxContraint_relaxed(self,Ax,Bz,gamma_over_rho,layer):
+        if layer < self.noL - 1:
+            mu = self.updateZ_layer[layer].mu
+        else:
+            mu = self.updateZ_lastlayer.mu
+        rho = self.rho
+        sum_of_terms = Ax + Bz + gamma_over_rho
+        return rho*mu/2*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms) # if this is in frequency, I may need to normalize.
+
+
 
 class GetNextIterX(tf.keras.layers.Layer):
     '''

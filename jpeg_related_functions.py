@@ -6,8 +6,9 @@ import optmz
 
 class Smooth_JPEG(optmz.ADMM):
     # This layer computes a smoothed version of a JPEG-compressed image.
-    def __init__(self,rho,alpha,noi,q,lmbda,fftSz,*args,**kwargs):
-        self.q = tf.reshape(q,(1,1,1,64))
+    def __init__(self,rho,alpha,noi,qY,qUV,lmbda,fftSz,*args,**kwargs):
+        self.qY = tf.reshape(qY,(1,1,1,64))
+        self.qUV = tf.reshape(qUV,(1,1,1,64))
         self.lmbda = lmbda
         self.fftSz = fftSz
         self.fltr = np.asarray([-1.,1.])
@@ -17,8 +18,8 @@ class Smooth_JPEG(optmz.ADMM):
         self.W = RGB2JPEG_Coef(dtype=self.dtype)
         self.Wt = JPEG_Coef2RGB(dtype=self.dtype)
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
-        self.relaxlayer = Relax_SmoothJPEG(self.alpha,self.q,dtype=self.dtype)
-        self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.q,self.W,self.Wt,dtype=self.dtype)
+        self.relaxlayer = Relax_SmoothJPEG(self.alpha,dtype=self.dtype)
+        self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
         self.uupdate = GammaUpdate_JPEG(dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
@@ -30,7 +31,7 @@ class Smooth_JPEG(optmz.ADMM):
         return [0.,0.,0.]
     def get_negative_C(self,s):
         Ws = self.W(s)
-        return [quantize(Ws[channel],self.q) for channel in range(len(Ws))]
+        return [quantize(Ws[channel],q) for (q,channel) in zip((self.qY,self.qUV,self.qUV),range(len(Ws)))]
     def init_itstats(self,s):
         return []
 
@@ -129,9 +130,9 @@ def halfqminus(q):
 def halfqplus(q):
     return q/2 + 1./510.
 
+@tf.custom_gradient
 def quantize(w,q):
-    # This may need to be modified to accomodate the Y-channel offset (I don't subtract off 0.5 from the Y channel when converting to dct coefficients because doing so would destroy the homogeneity property for mappings between RGB and dct coef domains.)
-    return q*tf.math.round(w/q)
+    return (q*tf.math.round(w/q),tf.identity)
 
 class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
     def __init__(self,lmbda,fftSz,fltr1,fltr2,*args,**kwargs):
@@ -146,31 +147,33 @@ class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
         return self.ifft(self.fft(inputs)/A)
 
 class Relax_SmoothJPEG(tf.keras.layers.Layer):
-    def __init__(self,alpha,q,*args,**kwargs):
+    def __init__(self,alpha,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.alpha = alpha
-        self.q = q
     def call(self,inputs):
         QWs,QWz = inputs
         return [(1.0 - self.alpha)*QWz[channel] - (2.0 - self.alpha)*QWs[channel] for channel in range(len(QWs))]
 
 class ZUpdate_JPEG(tf.keras.layers.Layer):
-    def __init__(self,mu,rho,q,W,Wt,*args,**kwargs):
+    def __init__(self,mu,rho,qY,qUV,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.qntzn_adjst = QuantizationAdjustment(mu,rho,q,dtype=self.dtype)
+        qntzn_adjstY = QuantizationAdjustment(mu,rho,qY,dtype=self.dtype)
+        qntzn_adjstUV = QuantizationAdjustment(mu,rho,qUV,dtype=self.dtype)
+        self.qntzn_adjst = [qntzn_adjstY,qntzn_adjstUV,qntzn_adjstUV]
         self.rho = rho
         self.mu = mu
-        self.q = q
+        self.qY = qY
+        self.qUV = qUV
         self.W = W
         self.Wt = Wt
     def call(self,inputs):
         fx,Axminuss,gamma_over_rho = inputs
         Wx = self.W(fx)
         r = [-Axminuss[channel] - Wx[channel] - gamma_over_rho[channel] for channel in range(len(Wx))]
-        Wdeltaz = [self.qntzn_adjst((Wx[channel],r[channel])) for channel in range(len(Wx))]
+        Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel],r[channel])) for channel in range(len(Wx))]
         z = fx + self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
         Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
-        QWz = [quantize(Wz[channel],self.q) for channel in range(len(Wz))]
+        QWz = [quantize(Wz[channel],q) for (q,channel) in zip((self.qY,self.qUV,self.qUV),range(len(Wz)))] # fix the quantization please
         return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):
