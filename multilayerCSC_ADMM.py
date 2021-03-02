@@ -119,15 +119,38 @@ class MultiLayerCSC(optmz.ADMM):
 
     def evaluateLagrangian(self,x,y,Ax,By,gamma):
         recErr = self.reconstructionErrors(x,y)
-        penaltyErr = self.penaltyErrors(x,y)
+        penaltyErr = self.penaltyErrors(y)
         cnstrErr = self.constraintErrors(Ax,By,gamma)
         return recErr + penaltyErr + cnstrErr
     def reconstructionErrors(self,x,y):
-        raise NotImplementedError
-    def penaltyErrors(x,y):
-        raise NotImplementedError
-    def constraintErrors(Ax,By,gamma):
-        raise NotImplementedError
+        v,z = y
+        mu = self.updateZ_layer[0].mu
+        reconErr = mu/2*self.reconstructureTerm(v,self.dictObj.dmul(x[0]))
+        for layer in range(1,self.noL):
+            if layer < self.noL - 1:
+                mu = self.updateZ_layer[layer].mu
+            else:
+                mu = self.updateZ_lastlayer.mu
+            reconErr += mu/2*self.reconstructionTerm(z[layer - 1],self.dictObj.dmul(x[layer])) # normalize to spatial domain
+        return reconErr
+    def penaltyErrors(y):
+        v,z = y
+        penaltyErr = 0
+        for layer in range(self.noL):
+            penaltyErr += self.penaltyTerm(self.IFFT[layer](z[layer]),layer)
+        return penaltyErr
+    def constraintErrors(x,By,u,negC):
+        s_LF,QWs = negC
+        Bv,Bz = By
+        eta,gamma = u
+        constraintErr = self.jpegConstr(Bv,QWs,eta):
+        for layer in range(self.noL):
+            if layer < self.noL - 1:
+                Bz_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+            else:
+                Bz_over_R = Bz[layer]
+            constraintErr += self.zxConstraint(Ax[layer],Bz_over_R,gamma[layer],layer) # normalize to spatial domain
+        return constraintErr
 
     # Low-level Initialization Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
     def xinit(self,xprev,layer):
@@ -197,19 +220,15 @@ class MultiLayerCSC(optmz.ADMM):
 
 
     # Low-level augmented Langrangian evaluation:
-    def reconstructionTerm(self,z,Dx,layer):
-        if layer < self.noL - 1:
-            mu = self.updateZ_layer[layer].mu
-        else:
-            mu = self.updateZ_lastlayer.mu
+    def reconstructionTerm(self,z,Dx):
         zminusDx = z - Dx
-        return mu/2*tf.reduce_sum(tf.conj(zminusDx)*zminusDx) # If this is in frequency, I may need to 'normalize'.
+        return tf.reduce_sum(tf.conj(zminusDx)*zminusDx)
     def nonnegativeCheck(self,z):
         assert(tf.all(z >= 0.))
 
     def penaltyTerm(self,z,layer):
         if layer < self.noL - 1:
-            return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer.b*z))
+            return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer[layer].b*z))
         else:
             return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.max(z,0.)))/self.rho/self.updateZ_lastlayer.mu
     def jpegConstraint(self,QWz,QWs,eta_over_rho):
