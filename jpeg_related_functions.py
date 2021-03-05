@@ -152,7 +152,7 @@ class Relax_SmoothJPEG(tf.keras.layers.Layer):
         self.alpha = alpha
     def call(self,inputs):
         QWs,QWz = inputs
-        return [(1.0 - self.alpha)*QWz[channel] - (2.0 - self.alpha)*QWs[channel] for channel in range(len(QWs))]
+        return [-(1.0 - self.alpha)*QWz[channel] - self.alpha*QWs[channel] for channel in range(len(QWs))]
 
 class ZUpdate_JPEG(tf.keras.layers.Layer):
     def __init__(self,mu,rho,qY,qUV,W,Wt,*args,**kwargs):

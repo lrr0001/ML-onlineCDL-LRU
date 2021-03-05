@@ -7,6 +7,30 @@ import util
 import numpy as np
 
 class MultiLayerCSC(optmz.ADMM):
+    '''
+    x: list
+       x[\ell] = \mR_{\ell}^{-1}\vx_{\ell}
+    y: list
+        v
+        z: list
+            z[\ell]: \vz_{\ell}
+            z[L - 1]: \mR_{L - 1}^{-1}\vz_{L - 1}
+    u: list
+        eta
+        gamma: list
+            gamma[\ell] = \vgamma_{\ell}/\rho\sqrt{\mu_{\ell}}
+    Ax: list
+        Azero
+        Ax: list
+            Ax[\ell]
+    By: list
+        Bv
+        Bz: list
+            Bz[\ell] 
+    negC: list
+        s_LF
+        QWs
+    '''
     def __init__(self,rho,alpha_init,mu_init,qY,qUV,fltrSz,fftSz,noc,nof,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
@@ -24,11 +48,14 @@ class MultiLayerCSC(optmz.ADMM):
         self.updateX_layer = []
         self.FFT = []
         self.IFFT = []
+        self.FFT_factor = [] 
         for ii in range(noL):
             self.dictObj.append(fctr.dictionary_object2D(fltrSz= fltrSz[ii],fftSz=fftSz[ii],noc=noc[ii],nof=nof[ii],rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(ii),lraParam = lraParam,dtype=cmplxdtype))
             self.updateX_layer.append(GetNextIterX(tf.cast(rho,dtype=cmplxdtype),self.dictObj[ii],dtype=cmplxdtype))
             self.FFT.append(transf.fft2d_inner(fftSz[ii]))
             self.IFFT.append(transf.ifft2d_inner(fftSz[ii]))
+            self.FFT_factor.append(np.prod(fftSz[ii]))
+       
 
         self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype)
         self.updateZ_layer = [[],]*(noL - 1)
@@ -117,39 +144,61 @@ class MultiLayerCSC(optmz.ADMM):
         eta = self.updateEta(eta,AzeroplusC,Bv)
         return (eta,gamma)
 
-    def evaluateLagrangian(self,x,y,Ax,By,gamma):
+    #High-level Langrangian Evalaluation Functions
+    def evaluateLagrangian(self,x,y,u,By,negC):
         recErr = self.reconstructionErrors(x,y)
         penaltyErr = self.penaltyErrors(y)
-        cnstrErr = self.constraintErrors(Ax,By,gamma)
+        cnstrErr = self.constraintErrors(x,u,By,negC)
+        return recErr + penaltyErr + cnstrErr
+    def evaluateRelaxedLagrangian(self,x,y,u,Ax,By,negC):
+        recErr = self.reconstructionErrors(x,y)
+        penaltyErr = self.penaltyErrors(y)
+        cnstrErr = self.constraintErrors_relaxed(u,Ax,By)
         return recErr + penaltyErr + cnstrErr
     def reconstructionErrors(self,x,y):
         v,z = y
         mu = self.updateZ_layer[0].mu
-        reconErr = mu/2*self.reconstructureTerm(v,self.dictObj.dmul(x[0]))
+        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul(x[0]))/self.FFT_factor[0]
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 mu = self.updateZ_layer[layer].mu
             else:
                 mu = self.updateZ_lastlayer.mu
-            reconErr += mu/2*self.reconstructionTerm(z[layer - 1],self.dictObj.dmul(x[layer])) # normalize to spatial domain
+            reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul(x[layer]))/self.FFT_factor[layer]
         return reconErr
-    def penaltyErrors(y):
+    def penaltyErrors(self,y):
         v,z = y
         penaltyErr = 0
         for layer in range(self.noL):
             penaltyErr += self.penaltyTerm(self.IFFT[layer](z[layer]),layer)
         return penaltyErr
-    def constraintErrors(x,By,u,negC):
+    def constraintErrors(self,x,u,By,negC):
         s_LF,QWs = negC
         Bv,Bz = By
         eta,gamma = u
-        constraintErr = self.jpegConstr(Bv,QWs,eta):
+        constraintErr = self.jpegConstraint(eta,Bv,QWs)
         for layer in range(self.noL):
             if layer < self.noL - 1:
+                mu = self.updateZ_layer[layer].mu
+                z_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+            else:
+                mu = self.updateZ_lastlayer.mu
+                z_over_R = Bz[layer]
+            constraintErr += (mu/2)*self.zxConstraint(gamma[layer],x[layer],z_over_R)/self.FFT_factor[layer]
+        return constraintErr
+    def constraintErrors_relaxed(self,u,Ax,By):
+        Azero,Ax = Ax
+        Bv,Bz = By
+        eta,gamma = u
+        constraintErr = self.jpegConstraint_relaxed(eta,Azero,Bv)
+        for layer in range(self.noL):
+            if layer < self.noL - 1:
+                mu = self.updateZ_layer[layer].mu
                 Bz_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
             else:
+                mu = self.updateZ_lastlayer.mu
                 Bz_over_R = Bz[layer]
-            constraintErr += self.zxConstraint(Ax[layer],Bz_over_R,gamma[layer],layer) # normalize to spatial domain
+            constraintErr += (mu/2)*self.zxConstraint_relaxed(gamma[layer],Ax[layer],Bz_over_R)/self.FFT_factor[layer]
         return constraintErr
 
     # Low-level Initialization Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
@@ -222,7 +271,8 @@ class MultiLayerCSC(optmz.ADMM):
     # Low-level augmented Langrangian evaluation:
     def reconstructionTerm(self,z,Dx):
         zminusDx = z - Dx
-        return tf.reduce_sum(tf.conj(zminusDx)*zminusDx)
+        output = tf.reduce_sum(tf.math.conj(zminusDx)*zminusDx)
+        return tf.cast(output,output.dtype.real_dtype)
     def nonnegativeCheck(self,z):
         assert(tf.all(z >= 0.))
 
@@ -230,29 +280,23 @@ class MultiLayerCSC(optmz.ADMM):
         if layer < self.noL - 1:
             return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer[layer].b*z))
         else:
-            return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.max(z,0.)))/self.rho/self.updateZ_lastlayer.mu
-    def jpegConstraint(self,QWz,QWs,eta_over_rho):
+            return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.math.maximum(z,0.)))/self.rho/self.updateZ_lastlayer.mu
+    def jpegConstraint(self,eta_over_rho,QWz,QWs):
         aug_cnstrnt_term = [QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))]
-        return self.rho/2*sum([tf.math_reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_constrnt_term[channel])) for channel in range(len(QWs))])
-    def jpegConstraint_relaxed(self,Ax,Bv,eta_over_rho):
-        aug_cnstrnt_term = [Ax[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))]
-        return self.rho/2*sum([tf.math_reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_constrnt_term[channel])) for channel in range(len(QWs))])
-    def zxConstraint(self,x_over_R,z_over_R,gamma_over_rho,layer):
-        if layer < self.noL - 1:
-            mu = self.updateZ_layer[layer].mu
-        else:
-            mu = self.updateZ_lastlayer.mu
-        rho = self.rho
-        sum_of_terms = z_over_R - x_over_R + gamma_over_R
-        return rho*mu/2*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms) # if this is in frequency, I may need to 'normalize'.
-    def zxContraint_relaxed(self,Ax,Bz,gamma_over_rho,layer):
-        if layer < self.noL - 1:
-            mu = self.updateZ_layer[layer].mu
-        else:
-            mu = self.updateZ_lastlayer.mu
-        rho = self.rho
-        sum_of_terms = Ax + Bz + gamma_over_rho
-        return rho*mu/2*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms) # if this is in frequency, I may need to normalize.
+        return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(QWs))])
+    def jpegConstraint_relaxed(self,eta_over_rho,Azero,Bv):
+        aug_cnstrnt_term = [Azero[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))]
+        return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(Bv))])
+    def zxConstraint(self,gamma_over_rho,x_over_R,z_over_R):
+        rho = util.complexNum(self.rho)
+        sum_of_terms = z_over_R - x_over_R + gamma_over_rho
+        output = rho*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms)
+        return tf.cast(output,output.dtype.real_dtype)
+    def zxConstraint_relaxed(self,gamma_over_rho,Ax_relaxed,Bz):
+        rho = util.complexNum(self.rho)
+        sum_of_terms = Ax_relaxed + Bz + gamma_over_rho
+        output = rho*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms)
+        return tf.cast(output,output.dtype.real_dtype)
 
 
 
@@ -273,7 +317,7 @@ class GetNextIterX(tf.keras.layers.Layer):
         self.rho = rho
     def call(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        return self.dictObj.qinv(self.dictObj.dhmul(z_prevlayer) - self.rho*(z_over_R - gamma_scaled))
+        return self.dictObj.qinv(self.dictObj.dhmul(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))
 
 class GetRelaxedAx(tf.keras.layers.Layer):
     '''
@@ -290,7 +334,7 @@ class GetRelaxedAx(tf.keras.layers.Layer):
         self.alpha = alpha #tf.Variable(alpha_init,trainable=True)
     def call(self,inputs):
         x_over_R,z_over_R = inputs
-        return  (1 - self.alpha)*z_over_R - self.alpha*x_over_R
+        return  -(1 - self.alpha)*z_over_R - self.alpha*x_over_R
 
 
 
@@ -299,7 +343,7 @@ class GetNextIterZ(tf.keras.layers.Layer):
      inputs: All must be in spatial domain.
 
        Dx_nextlayer: \mD_{\ell + 1}\vx_{\ell + 1}^{(k + 1)}
-       Ax_relaxed: \alpha_k\mR_{\ell}^{-1}\vx_{\ell}^{(k + 1)} - (1 - \alpha_k)\mR_{\ell}^{-1}\vz_{\ell}^{(k)}
+       Ax_relaxed: -\alpha_k\mR_{\ell}^{-1}\vx_{\ell}^{(k + 1)} - (1 - \alpha_k)\mR_{\ell}^{-1}\vz_{\ell}^{(k)}
        gamma_scaled: \frac{\vgamma_{\ell}^{(k)}}{\rho\sqrt{\mu_{\ell}}
 
      outputs: Also in spatial domain
@@ -326,7 +370,7 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
     '''
       inputs: All must be in spatial domain.
 
-        Ax_relaxed: \alpha_k\mR_L^{-1}\vx_L^{(k + 1)} - (1 - \alpha_k)\mR_L^{-1}\vz_L^{(k)}
+        Ax_relaxed: = -\alpha_k\mR_L^{-1}\vx_L^{(k + 1)} - (1 - \alpha_k)\mR_L^{-1}\vz_L^{(k)}
         gamma_scaled: \frac{\gamma_L^{(k)}}{\rho\sqrt{\mu_L}}
 
       outputs: Also in spatial domain
@@ -350,7 +394,7 @@ class GetNextIterGamma(tf.keras.layers.Layer):
 
         gamma_scaled: \frac{\gamma_{\ell}^{(k)}}{\rho\sqrt{\mu_{\ell}}
         z_over_R: \mR_{\ell}^{-1}\vz_{\ell}^{(k + 1)}
-        Ax_relaxed: \valpha_k\mR_{\ell}^{-1}\vx_{\ell}^{(k + 1)} - (1 - \valpha_k)\mR_{\ell}^{-1}\vz_{\ell}^{(k)}
+        Ax_relaxed: -\valpha_k\mR_{\ell}^{-1}\vx_{\ell}^{(k + 1)} - (1 - \valpha_k)\mR_{\ell}^{-1}\vz_{\ell}^{(k)}
 
       outputs: Also in spatial domain
         gamma_scaled: \frac{\vgamma_{\ell}^{(k + 1)}}{\rho\sqrt{\mu_{\ell}}
