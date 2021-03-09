@@ -31,7 +31,7 @@ class MultiLayerCSC(optmz.ADMM):
         s_LF
         QWs
     '''
-    def __init__(self,rho,alpha_init,mu_init,qY,qUV,fltrSz,fftSz,noc,nof,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
+    def __init__(self,rho,alpha_init,mu_init,qY,qUV,cropAndMerge,fltrSz,fftSz,noc,nof,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
         rho = tf.cast(rho,dtype = cmplxdtype.real_dtype)
@@ -41,6 +41,7 @@ class MultiLayerCSC(optmz.ADMM):
         self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,dtype=dtype)
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
+        self.cropAndMerge = cropAndMerge
         self.initializeLayers(rho,mu_init,qY,qUV,noL,fltrSz,fftSz,noc,nof,lraParam,cmplxdtype)
     def initializeLayers(self,rho,mu_init,qY,qUV,noL,fltrSz,fftSz,noc,nof,lraParam,cmplxdtype):
         b_init = 0.
@@ -50,7 +51,7 @@ class MultiLayerCSC(optmz.ADMM):
         self.IFFT = []
         self.FFT_factor = [] 
         for ii in range(noL):
-            self.dictObj.append(fctr.dictionary_object2D(fltrSz= fltrSz[ii],fftSz=fftSz[ii],noc=noc[ii],nof=nof[ii],rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(ii),lraParam = lraParam,dtype=cmplxdtype))
+            self.dictObj.append(fctr.dictionary_object2D(fltrSz= fltrSz[ii],fftSz=fftSz[ii],noc=noc[ii],nof=nof[ii],rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(ii),lraParam = lraParam,dtype=cmplxdtype)) # Fix first layer, and approach to initialization
             self.updateX_layer.append(GetNextIterX(tf.cast(rho,dtype=cmplxdtype),self.dictObj[ii],dtype=cmplxdtype))
             self.FFT.append(transf.fft2d_inner(fftSz[ii]))
             self.IFFT.append(transf.ifft2d_inner(fftSz[ii]))
@@ -213,11 +214,13 @@ class MultiLayerCSC(optmz.ADMM):
     def vinit(self,x_0,Azero,s_LF):
         Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
         Dx = tf.reshape(Dx,Dx.shape[:-1])
-        vpluss_LF,Bv = self.updatev((Dx + s_LF,Azero,[0.,0.,0.]))
-        v = vpluss_LF - s_LF
+        croppedDx = self.cropAndMerge.crop(Dx)
+        vpluss_LF,Bv = self.updatev((croppedDx + s_LF,Azero,[0.,0.,0.]))
+        vpremerge = vpluss_LF - s_LF
+        v = self.cropAndMerge.merge((vpremerge,Dx))
         v = util.addDim(v)
         return (self.FFT[0](v),Bv) 
-    def zinit(self,xnext,Ax,layer):
+    def zinit(self,xnext,Ax,layer):     
         return self.updateZ(xnext,Ax,tf.reshape(tf.cast(0.,tf.as_dtype(self.cmplxdtype)),(1,1,1,1,1)),layer)
     def zinit_last(self,Ax):
         return self.updateZ_last(Ax,tf.reshape(tf.cast(0.,tf.as_dtype(self.cmplxdtype)),(1,1,1,1,1)))
@@ -245,11 +248,12 @@ class MultiLayerCSC(optmz.ADMM):
         return self.relax0((negC,Bv))
     def updateV(self,x_0,Azero,eta_over_rho,s_LF):
         Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
-        Dx = tf.reshape(Dx,Dx.shape[:-1])
+        # It might be helpful to build an object to couple cropping and padding so that it is never messed up. Best if this is done outside, because the cropping function can be used to get QWs.
+        Dx = tf.reshape(Dx,Dx.shape[:-1]) # add tf.crop_to_bounding_box here.
         vpluss_LF,Bv = self.updatev((Dx + s_LF,Azero,eta_over_rho))
         v = vpluss_LF - s_LF
         v = util.addDim(v)
-        return (self.FFT[0](v),Bv)
+        return (self.FFT[0](v),Bv) # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
     def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
         assert(layer < self.noL - 1)
         Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
@@ -404,3 +408,52 @@ class GetNextIterGamma(tf.keras.layers.Layer):
     def call(self,inputs):
         gamma_scaled,z_over_R,Ax_relaxed = inputs
         return gamma_scaled + Ax_relaxed + z_over_R
+
+class CropPadObject:
+    def __init__(self,signal_sz,strides,kernel_sz,dtype):
+        self.dtype = dtype
+        padding = 0
+        for ii in range(len(kernel_sz)):
+            stride_factor = 1
+            for jj in range(0,ii):
+                stride_factor = stride_factor*strides[jj]
+            padding = padding + stride_factor*kernel_sz[ii]
+        stride_factor = stride_factor*strides[len(kernel_sz) - 1]
+        extra_padding = stride_factor - ((signal_sz + padding) % stride_factor)
+        self.build_crop_and_merge(signal_sz,padding + extra_padding)
+
+    def build_crop_and_merge(self,signal_sz,padding):
+        padding_top = (padding/2).astype('int') # don't worry: i'll fix it if it doesn't divide evenly
+        padding_bottom = (padding/2).astype('int')
+        for ii in range(padding.shape[0]):
+            if padding[ii] % 2 == 1:
+                padding_top[ii] = ((padding[ii] - 1)/2).astype('int')
+                padding_bottom[ii] = ((padding[ii] + 1)/2).astype('int')
+        #self.crop = Crop(padding_top[0],padding_top[1],signal_sz[0],signal_sz[1],dtype=self.dtype)
+        
+        self.paddingTuple = ((padding_top[0],padding_bottom[0]),(padding_top[1],padding_bottom[1]))
+        self.crop = tf.keras.layers.Cropping2D(self.paddingTuple,dtype=self.dtype)
+        pad = tf.keras.layers.ZeroPadding2D(padding = self.paddingTuple)
+        trues = tf.fill((1,signal_sz[0],signal_sz[1],1),1)
+        mask = tf.cast(pad(trues),'bool')
+        self.merge = Merge(pad,mask,dtype=self.dtype)
+
+#class Crop(tf.keras.layers.Layer):
+#    def __init__(self,start_cols,start_rows,targetSz_cols,targetSz_rows,*args,**kwargs):
+#        super().__init__(*args,**kwargs)
+#        self.start_cols = start_cols
+#        self.start_rows = start_cols
+#        self.targetSz_cols = targetSz_cols
+#        self.targetSz_rows = targetSz_rows
+#    def call(self,inputs):
+#        tf.image.crop_to_bounding_box(inputs,self.start_cols,self.start_rows,self.targetSz_cols,self.targetSz_rows)
+
+class Merge(tf.keras.layers.Layer):
+    def __init__(self,pad,mask,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.pad = pad
+        self.mask = mask
+    def call(self,inputs):
+        x,y = inputs
+        return tf.where(self.pad(x),y,self.mask)
+

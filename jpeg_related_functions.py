@@ -31,7 +31,8 @@ class Smooth_JPEG(optmz.ADMM):
         return [0.,0.,0.]
     def get_negative_C(self,s):
         Ws = self.W(s)
-        return [quantize(Ws[channel],q) for (q,channel) in zip((self.qY,self.qUV,self.qUV),range(len(Ws)))]
+        Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
+        return [quantize(Ws[channel],q,offset) for (q,channel,offset) in zip((self.qY,self.qUV,self.qUV),range(len(Ws)),(Yoffset,None,None))]
     def init_itstats(self,s):
         return []
 
@@ -130,9 +131,14 @@ def halfqminus(q):
 def halfqplus(q):
     return q/2 + 1./510.
 
-@tf.custom_gradient
-def quantize(w,q):
-    return (q*tf.math.round(w/q),tf.identity)
+#@tf.custom_gradient
+def quantize(w,q,offset=None):
+    if offset is None:
+        #return (q*tf.math.round(w/q),tf.identity)
+        return q*tf.math.round(w/q)
+    else:
+        return q*(tf.math.round((w - offset)/q)) + offset
+        #return (q*(tf.math.round((w - offset)/q)) + offset,tf.identity)
 
 class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
     def __init__(self,lmbda,fftSz,fltr1,fltr2,*args,**kwargs):
@@ -157,6 +163,7 @@ class Relax_SmoothJPEG(tf.keras.layers.Layer):
 class ZUpdate_JPEG(tf.keras.layers.Layer):
     def __init__(self,mu,rho,qY,qUV,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
+        self.Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
         qntzn_adjstY = QuantizationAdjustment(mu,rho,qY,dtype=self.dtype)
         qntzn_adjstUV = QuantizationAdjustment(mu,rho,qUV,dtype=self.dtype)
         self.qntzn_adjst = [qntzn_adjstY,qntzn_adjstUV,qntzn_adjstUV]
@@ -170,10 +177,10 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         fx,Axminuss,gamma_over_rho = inputs
         Wx = self.W(fx)
         r = [-Axminuss[channel] - Wx[channel] - gamma_over_rho[channel] for channel in range(len(Wx))]
-        Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel],r[channel])) for channel in range(len(Wx))]
+        Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
         z = fx + self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
         Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
-        QWz = [quantize(Wz[channel],q) for (q,channel) in zip((self.qY,self.qUV,self.qUV),range(len(Wz)))] # fix the quantization please
+        QWz = [quantize(Wz[channel],q,offset) for (q,channel,offset) in zip((self.qY,self.qUV,self.qUV),range(len(Wz)),(self.Yoffset,None,None))]
         return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):
@@ -199,7 +206,7 @@ class QuantizationAdjustment(tf.keras.layers.Layer):
 
         firstterm_min = -r_scaled
         secondterm_static = quantize(y,self.q) - y - tf.math.sign(r)*self.q*halfqminus(self.q)
-        secondterm_move = self.q*tf.math.round(y/self.q) - y - tf.math.sign(r)*self.q*(1. + halfqminus(self.q))
+        secondterm_move = quantize(y,self.q) - y - tf.math.sign(r)*self.q*(1. + halfqminus(self.q))
 
         # minimize first term, provided second term unchanged
         candidate1 = -tf.math.sign(r)*tf.math.minimum(tf.math.abs(firstterm_min),tf.math.abs(secondterm_static))
