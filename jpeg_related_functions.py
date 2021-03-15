@@ -32,7 +32,7 @@ class Smooth_JPEG(optmz.ADMM):
     def get_negative_C(self,s):
         Ws = self.W(s)
         Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
-        return [quantize(Ws[channel],q,offset) for (q,channel,offset) in zip((self.qY,self.qUV,self.qUV),range(len(Ws)),(Yoffset,None,None))]
+        return threeChannelQuantize(Ws,self.qY,self.qUV,Yoffset)
     def init_itstats(self,s):
         return []
 
@@ -140,6 +140,9 @@ def quantize(w,q,offset=None):
         return q*(tf.math.round((w - offset)/q)) + offset
         #return (q*(tf.math.round((w - offset)/q)) + offset,tf.identity)
 
+def threeChannelQuantize(w,qY,qUV,Yoffset):
+    return [quantize(w[ii],q,offset) for (ii,q,offset) in zip(range(3),(qY,qUV,qUV),(Yoffset,None,None)]
+
 class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
     def __init__(self,lmbda,fftSz,fltr1,fltr2,*args,**kwargs):
         super().__init__(*args,**kwargs)
@@ -180,7 +183,7 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
         z = fx + self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
         Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
-        QWz = [quantize(Wz[channel],q,offset) for (q,channel,offset) in zip((self.qY,self.qUV,self.qUV),range(len(Wz)),(self.Yoffset,None,None))]
+        QWz = threeChannelQuantize(Wz,qY,qUV,self.Yoffset)
         return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):
