@@ -34,8 +34,8 @@ smooth_jpeg2 = jrf.Smooth_JPEG(rho,alpha,noi,qY,qUV,lmbda,fftSz2,dtype=dtype)
 # Loop through images
 dataPath = 'data/original/simpleTest/'
 filelist = os.listdir(dataPath)
-savePath = 'data/scratchwork/simpleTest/'
-for datatype in ['val/',]:
+savePath = 'data/scratchwork/simpleTest/whole/'
+for datatype in ['train/','val/',]:
     filelist = os.listdir(dataPath + datatype)
     for filename in filelist:
         loadedImg = PIL.Image.open(dataPath + datatype + filename)

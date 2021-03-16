@@ -34,9 +34,9 @@ startOffset1 = (24,16)
 startOffset2 = (16,24)
 # load previous parameters
 
-dataloadpath = 'data/scratchwork/simpleTest/'
-datasavepath = 'data/processed/simpleTest/'
-fid = open(datasavepath + 'param.pckl','rb')
+dataloadpath = 'data/scratchwork/simpleTest/whole/'
+datasavepath = 'data/scratchwork/simpleTest/patches/'
+fid = open('data/processed/simpleTest/param.pckl','rb')
 python_dict = pkl.load(fid)
 dtype = python_dict['dtype']
 qY = python_dict['qY']
@@ -56,7 +56,7 @@ Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype),tf.cast(0.,dtype))
 
 
 
-for datatype in ['val/',]
+for datatype in ['train/','val/',]
     filelist = os.listdir(dataloadpath + datatype)
     for filename in filelist:
         fid = open(dataloadpath + datatype + filename,'rb')

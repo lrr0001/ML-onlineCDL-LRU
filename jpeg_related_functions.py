@@ -131,17 +131,26 @@ def halfqminus(q):
 def halfqplus(q):
     return q/2 + 1./510.
 
+def h(z,y):
+    def grad_fun(grad):
+        return (tf.identity(grad),tf.identity(grad))
+    return z,grad_fun
+
+@tf.custom_gradient # bad gradient in respect to q, but q shouldn't depend on trainable variable
+def _quantize(w,q):
+    return q*tf.math.round(w/q),tf.identity
+
 #@tf.custom_gradient
 def quantize(w,q,offset=None):
     if offset is None:
         #return (q*tf.math.round(w/q),tf.identity)
-        return q*tf.math.round(w/q)
+        return _quantize(w,q)
     else:
-        return q*(tf.math.round((w - offset)/q)) + offset
+        return _quantize(w - offset,q) + offset
         #return (q*(tf.math.round((w - offset)/q)) + offset,tf.identity)
 
 def threeChannelQuantize(w,qY,qUV,Yoffset):
-    return [quantize(w[ii],q,offset) for (ii,q,offset) in zip(range(3),(qY,qUV,qUV),(Yoffset,None,None)]
+    return [quantize(w[ii],q,offset) for (ii,q,offset) in zip(range(3),(qY,qUV,qUV),(Yoffset,None,None))]
 
 class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
     def __init__(self,lmbda,fftSz,fltr1,fltr2,*args,**kwargs):
@@ -183,7 +192,7 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
         z = fx + self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
         Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
-        QWz = threeChannelQuantize(Wz,qY,qUV,self.Yoffset)
+        QWz = threeChannelQuantize(Wz,self.qY,self.qUV,self.Yoffset)
         return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):

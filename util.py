@@ -36,8 +36,8 @@ def complexNum(x):
     return tf.complex(x,tf.cast(0.0,dtype = x.dtype))
 
 def alternate_concat(values,axis): 
-    concat_tensor = tf.concat(map(alternate_reshape(zip(values,len(values)*(axis,)),axis)
-    return tf.reshape(concat_tensor,concat_tensor.shape[:axis] + (concat_tensor.shape[axis]*concat_tensor.shape[axis + 1],) + concat_tensor[axis + 2:])
+    concat_tensor = tf.concat(map(alternate_reshape,zip(values,len(values)*(axis,))),axis)
+    return tf.reshape(concat_tensor,concat_tensor.shape[:axis] + (concat_tensor.shape[axis]*concat_tensor.shape[axis + 1],) + concat_tensor.shape[axis + 2:])
 
 def alternate_reshape(inputs):
     input_tensor,axis = inputs
