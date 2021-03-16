@@ -67,7 +67,7 @@ dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
 
 #   ******** BUILD MODEL ********
-CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,qY,qUV,cropAndMerge,fftSz,problem_param['D'],lraParam,noi,noL,cmplxdtype)
+CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],lraParam,noi,noL,cmplxdtype)
 
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)

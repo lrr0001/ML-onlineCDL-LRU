@@ -31,7 +31,7 @@ class MultiLayerCSC(optmz.ADMM):
         s_LF
         QWs
     '''
-    def __init__(self,rho,alpha_init,mu_init,qY,qUV,cropAndMerge,fftSz,D,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
+    def __init__(self,rho,alpha_init,mu_init,qY,qUV,cropAndMerge,fftSz,strides,D,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
         rho = tf.cast(rho,dtype = cmplxdtype.real_dtype)
@@ -42,8 +42,9 @@ class MultiLayerCSC(optmz.ADMM):
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
-        self.initializeLayers(rho,mu_init,qY,qUV,noL,fftSz,D,lraParam,cmplxdtype)
-    def initializeLayers(self,rho,mu_init,qY,qUV,noL,fftSz,D,lraParam,cmplxdtype):
+        self.initializeLayers(rho,mu_init,qY,qUV,noL,fftSz,stides,D,lraParam,cmplxdtype)
+    def initializeLayers(self,rho,mu_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype):
+        self.strides = strides
         self.dictObj = []
         self.updateX_layer = []
         self.FFT = []
@@ -62,12 +63,15 @@ class MultiLayerCSC(optmz.ADMM):
 
         self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype)
         self.updateZ_layer = [[],]*(noL - 1)
+        self.updateZ_layer_tossed = [[],]*(noL - 1)
         self.updateGamma_layer = GetNextIterGamma(dtype=cmplxdtype)
         self.updateZ_lastlayer = GetNextIterZ_lastlayer(rho,mu_init,self.dictObj[noL - 1],tf.zeros(shape = self.get_z_shape(self.fftSz[noL - 1],D[noL - 1].shape[-1],dtype=cmplxtype.real_dtype),dtype=cmplxdtype.real_dtype)
         mu = self.updateZ_lastlayer.mu
         for ii in range(noL - 2,-1,-1):
             self.updateZ_layer[ii] = GetNextIterZ(rho,mu_init,mu,self.dictObj[ii],self.dictObj[ii + 1],tf.zeros(shape = self.get_z_shape(self.fftSz[ii],D[ii].shape[-1],dtype=cmplxtype.real_dtype),dtype=cmplxdtype.real_dtype)
             mu = self.updateZ_layer[ii].mu
+            if strides[ii] == 2
+                self.updateZ_tossed[ii] = GetNextIterZ_downsampleTossed(rho,mu,self.dictObj[ii],self.updateZ_layer[ii].b,dtype=cmplxdtype.real_dtype)
         W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         Wt = jrf.JPEG_Coef2RGB(dtype=cmplxdtype.real_dtype)
         self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,W,Wt,dtype = cmplxdtype.real_dtype)
@@ -93,7 +97,10 @@ class MultiLayerCSC(optmz.ADMM):
         x = []
         x.append(self.xinit(self.FFT[0](util.addDim(s_HF)),layer = 0))
         for ii in range(1,self.noL):
-            x.append(self.xinit(x[ii - 1],layer = ii))
+            if self.strides[ii - 1] == 2:
+                x.append(self.xinit(util.freq_downsample(x[ii - 1]),layer=ii))
+            else:
+                x.append(self.xinit(x[ii - 1],layer = ii))
         Ax = ([-QWs[layer] for layer in range(len(QWs))],x)
         return (x,Ax)
     def init_y(self,s,x,Ax,negC):
@@ -124,7 +131,10 @@ class MultiLayerCSC(optmz.ADMM):
         x = []
         x.append(self.updateX(z_prevlayer=v,z=z[0],gamma_scaled = gamma[0],layer=0))
         for ii in range(1,self.noL):
-            x.append(self.updateX(z_prevlayer=z[ii - 1],z = z[ii],gamma_scaled = gamma[ii],layer=ii))
+            if self.strides[ii - 1] == 2:
+                x.append(self.updateX(z_prevlayer=util.freq_downsample(z[ii - 1]),z = z[ii],gamma_scaled = gamma[ii],layer=ii))
+            else:
+                x.append(self.updateX(z_prevlayer=z[ii - 1],z = z[ii],gamma_scaled = gamma[ii],layer=ii))
         return (x,(0.,x))
     def relax(self,Ax,By,negC):
         Azero,x = Ax
@@ -176,7 +186,10 @@ class MultiLayerCSC(optmz.ADMM):
                 mu = self.updateZ_layer[layer].mu
             else:
                 mu = self.updateZ_lastlayer.mu
-            reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul(x[layer]))/self.FFT_factor[layer]
+            if self.strides[layer - 1] == 2:
+                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul(x[layer]))/self.FFT_factor[layer]
+            else:
+                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul(x[layer]))/self.FFT_factor[layer]
         return reconErr
     def penaltyErrors(self,y):
         v,z = y
@@ -267,9 +280,31 @@ class MultiLayerCSC(optmz.ADMM):
         return (self.FFT[0](v),Bv) # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
     def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
         assert(layer < self.noL - 1)
+        if self.strides[layer] == 2:
+            return updateZ_downsample(x_nextlayer,Ax_relaxed,gamma_scaled,layer)
         Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
         z = self.updateZ_layer[layer]((self.IFFT[layer](Dx),self.IFFT[layer](Ax_relaxed),self.IFFT[layer](gamma_scaled)))
         return self.FFT[layer](z)
+    def updateZ_downsample(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
+        assert(layer < self.noL - 1)
+
+        # downsampled
+        Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
+        Ax_relaxed_spatial = self.IFFT[layer](Ax_relaxed)
+        gamma_spatial = self.IFFT[layer](gamma_scaled)
+        z_downsampled = self.updateZ_layer[layer]((self.IFFT[layer + 1](Dx),util.downsample(Ax_relaxed_spatial),util.downsample(gamma_spatial)))
+
+        #shift downsampled
+        z_shift_downsampled = self.updateZ_layer_tossed[layer](util.shift_downsample(Ax_relaxed_spatial),util.shift_downsample(gamma_spatial))
+
+        z_missed_cols = self.updateZ_layer_tossed[layer](util.col_downsample(Ax_relaxed_spatial),util.col_downsample(gamma_spatial))
+
+        # Need to build reconstruction from the three Zs
+        z_downsample_cols = util.alternate_concat((z_downsampled,z_shif_downsampled),axis = 2)
+
+        z = util.alternate_concat((z_downsample_cols,z_missed_cols),axis = 3)
+        return self.FFT[layer](z)
+
     def updateZ_last(self,Ax_relaxed,gamma_scaled):
         z = self.updateZ_lastlayer((self.IFFT[self.noL - 1](Ax_relaxed),self.IFFT[self.noL - 1](gamma_scaled)))
         return self.FFT[self.noL - 1](z)
@@ -400,6 +435,19 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
         Ax_relaxed,gamma_scaled = inputs
         R = util.rotate_dims_left(self.dictObj.R)
         return tf.keras.layers.ReLU(dtype=self.dtype)(-Ax_relaxed - gamma_scaled - R*self.b)
+
+class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
+    def __init__(self,rho,mu,dictObj,b,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.mu = mu
+        self.dictObj = dictObj
+        self.b = b
+        self.rho = rho
+    def call(self,inputs):
+        Ax_relaxed,gamma_scaled = inputs
+        R = util.rotate_dims_left(self.dictObj.R)
+        return R*tf.keras.layers.ReLU(dtype=self.dtype)(-Ax_relaxed - gamma_scaled - R*self.b/(rho*mu))
+
 
 
 
