@@ -1,5 +1,6 @@
 import tensorflow as tf
 import pickle as pkl
+import numpy as np
 
 nof = [32,64,128]
 noc = 3
@@ -9,19 +10,19 @@ noL = 3
 noi = 96
 
 D = []
-D.append(np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]))
+D.append(np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64'))
 for layer in range(1,noL):
-    D.append(np.random.randn(1,fltrSz[layer][0],fltrSz[layer][1],nof[layer - 1],nof[layer])
+    D.append(np.random.randn(1,fltrSz[layer][0],fltrSz[layer][1],nof[layer - 1],nof[layer]).astype('float64'))
 
-experimentpath = 'data/experiments/experiment1/'
-datapath = 'data/processed/simpleTest/
+experimentpath = 'data/experiment/simpleTest/experiment1/'
+datapath = 'data/processed/simpleTest/'
 
-trainfile = 'train/data.tfrecord'
-valfile = 'val/data.tfrecord'
-testfile = 'test/data.tfrecord'
+trainfile = 'train.tfrecord'
+valfile = 'val.tfrecord'
+testfile = 'test.tfrecord'
 
 fid = open(datapath + 'param.pckl','rb')
-data_param = pkl.dump(fid)
+data_param = pkl.load(fid)
 fid.close()
 
 param = {'data_param': data_param,
@@ -29,12 +30,12 @@ param = {'data_param': data_param,
          'noc': noc,
          'noi': noi,
          'stride': stride,
-         'fltrSz':fltrSize,
+         'fltrSz':fltrSz,
          'noL':noL,
          'D': D,
-         'datapath': datapath
-         'trainfile': trainfile
-         'valfile': valfile
+         'datapath': datapath,
+         'trainfile': trainfile,
+         'valfile': valfile,
          'testfile': testfile}
 
 

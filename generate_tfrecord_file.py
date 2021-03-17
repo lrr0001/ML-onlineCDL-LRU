@@ -31,8 +31,8 @@ def serialize_example(highpass, lowpass, compressed, raw):
   example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
   return example_proto.SerializeToString()
 
-datatype = 'val'
-datapath = 'data/processed/simpleTest/patches/' + datatype + '/'
+datatype = 'train'
+datapath = 'data/scratchwork/simpleTest/patches/' + datatype + '/'
 recordpath = 'data/processed/simpleTest/'
 recordname = datatype + '.tfrecord'
 writer = tf.io.TFRecordWriter(recordpath + recordname)

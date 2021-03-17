@@ -30,7 +30,7 @@ class dictionary_object2D(ppg.PostProcess):
         Dmeaned = Drand - tf.math.reduce_mean(input_tensor=Drand,axis = (1,2),keepdims=True)
         Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
         self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
-        self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False)
+        self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False) # keras may not like this
         return transf.fft2d_inner(fftSz)(self.D)       
 
     def Dmul(self,inputs):

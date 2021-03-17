@@ -44,7 +44,7 @@ qUV = python_dict['qUV']
 fid.close()
 python_dict['padding'] = padding
 python_dict['target_size'] = patch_size
-fid = open(datasavepath + 'param.pckl','wb')
+fid = open('data/processed/simpleTest/param.pckl','wb')
 pkl.dump(python_dict,fid)
 fid.close()
 
@@ -56,7 +56,7 @@ Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype),tf.cast(0.,dtype))
 
 
 
-for datatype in ['train/','val/',]
+for datatype in ['train/','val/',]:
     filelist = os.listdir(dataloadpath + datatype)
     for filename in filelist:
         fid = open(dataloadpath + datatype + filename,'rb')

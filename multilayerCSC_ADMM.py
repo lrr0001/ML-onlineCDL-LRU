@@ -31,7 +31,7 @@ class MultiLayerCSC(optmz.ADMM):
         s_LF
         QWs
     '''
-    def __init__(self,rho,alpha_init,mu_init,qY,qUV,cropAndMerge,fftSz,strides,D,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
+    def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
         rho = tf.cast(rho,dtype = cmplxdtype.real_dtype)
@@ -42,8 +42,8 @@ class MultiLayerCSC(optmz.ADMM):
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
-        self.initializeLayers(rho,mu_init,qY,qUV,noL,fftSz,stides,D,lraParam,cmplxdtype)
-    def initializeLayers(self,rho,mu_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype):
+        self.initializeLayers(rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype)
+    def initializeLayers(self,rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype):
         self.strides = strides
         self.dictObj = []
         self.updateX_layer = []
@@ -51,49 +51,79 @@ class MultiLayerCSC(optmz.ADMM):
         self.IFFT = []
         self.FFT_factor = [] 
         for ii in range(noL):
-            if ii == 0:
-                self.dictObj.append(fctr.dictionary_object2D_full_init(fftSz=fftSz[ii],D[ii],rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(ii),lraParam = lraParam,dtype=cmplxdtype))
-            else:
-                self.dictObj.append(fctr.dictionary_object2D_init(fftSz=fftSz[ii],D=D[ii],rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(ii),lraParam = lraParam,dtype=cmplxdtype))
+            self.dictObj.append(self.build_dict_obj(fftSz[ii],D[ii],rho,lraParam,cmplxdtype,ii))
             self.updateX_layer.append(GetNextIterX(tf.cast(rho,dtype=cmplxdtype),self.dictObj[ii],dtype=cmplxdtype))
             self.FFT.append(transf.fft2d_inner(fftSz[ii]))
             self.IFFT.append(transf.ifft2d_inner(fftSz[ii]))
             self.FFT_factor.append(np.prod(fftSz[ii]))
-       
 
         self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype)
-        self.updateZ_layer = [[],]*(noL - 1)
-        self.updateZ_layer_tossed = [[],]*(noL - 1)
+        reversed_updateZ_layer = []
+        #self.updateZ_layer = [[],]*(noL - 1)
         self.updateGamma_layer = GetNextIterGamma(dtype=cmplxdtype)
-        self.updateZ_lastlayer = GetNextIterZ_lastlayer(rho,mu_init,self.dictObj[noL - 1],tf.zeros(shape = self.get_z_shape(self.fftSz[noL - 1],D[noL - 1].shape[-1],dtype=cmplxtype.real_dtype),dtype=cmplxdtype.real_dtype)
-        mu = self.updateZ_lastlayer.mu
-        for ii in range(noL - 2,-1,-1):
-            self.updateZ_layer[ii] = GetNextIterZ(rho,mu_init,mu,self.dictObj[ii],self.dictObj[ii + 1],tf.zeros(shape = self.get_z_shape(self.fftSz[ii],D[ii].shape[-1],dtype=cmplxtype.real_dtype),dtype=cmplxdtype.real_dtype)
-            mu = self.updateZ_layer[ii].mu
-            if strides[ii] == 2
-                self.updateZ_tossed[ii] = GetNextIterZ_downsampleTossed(rho,mu,self.dictObj[ii],self.updateZ_layer[ii].b,dtype=cmplxdtype.real_dtype)
-        W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
+        self.updateZ_lastlayer,mu = self.build_updateZ_lastlayer(fftSz[noL - 1],D[noL - 1].shape[-1],rho,mu_init,self.dictObj[noL - 1],b_init,cmplxdtype)
+        for ii in range(noL - 2,-1,-1): # appending backwards because need the mu value, and tensorflow doesn't like when I initialize the entire list.  I'll flip it later so the indices make sense.
+            zupdate,mu = self.build_updateZ_layer(fftSz[ii],D[ii].shape[-1],rho,mu_init,mu,self.dictObj[ii],self.dictObj[ii + 1],b_init,cmplxdtype,strides[ii],ii)
+            #self.updateZ_layer[ii] = zupdate
+            reversed_updateZ_layer.append(zupdate)
+        self.updateZ_layer = []
+        for ii in range(noL - 1): # Last shall be first and first shall be last.
+            self.updateZ_layer.append(reversed_updateZ_layer[noL - 2 - ii])
+        self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         Wt = jrf.JPEG_Coef2RGB(dtype=cmplxdtype.real_dtype)
-        self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,W,Wt,dtype = cmplxdtype.real_dtype)
+        self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,self.W,Wt,dtype = cmplxdtype.real_dtype)
         self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, dtype=cmplxdtype.real_dtype)
         self.updateeta = jrf.GammaUpdate_JPEG(dtype=cmplxdtype.real_dtype)
+        self.qY = qY
+        self.qUV = qUV
+
+    def build_dict_obj(self,fftSz,D,rho,lraParam,cmplxdtype,layer):
+        if layer == 0:
+            return fctr.dictionary_object2D_init_full(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(layer),lraParam = lraParam)
+        else:
+            return fctr.dictionary_object2D_init(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(layer),lraParam=lraParam)
+
+    def build_updateZ_layer(self,fftSz,nof,rho,mu_init,munext,dictObj,nextdictObj,b_init,cmplxdtype,strides,layer):
+        if strides == 2:
+            zshapes = self.get_downsampled_z_shape(fftSz,nof)
+            Zupdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            mu = Zupdate.mu
+            Z_update_shift = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            Z_update_missed_cols = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[1],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            shift_concat = util.AlternateConcat(shape=zshapes[0][1:],num_of_items=2,axis=1,dtype = cmplxdtype.real_dtype)
+            cols_concat = util.AlternateConcat(shape=zshapes[1][1:],num_of_items=2,axis=2,dtype = cmplxdtype.real_dtype)
+            #return {'downsampled': Zupdate, 'shifted': Z_update_shift, 'missed_cols': Z_update_missed_cols,'shift_concat': shift_concat,'cols_concat': cols_concat},mu 
+            return (Zupdate,Z_update_shift,Z_update_missed_cols,shift_concat,cols_concat),mu
+        else:
+            zUpdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_z_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            return zUpdate,zUpdate.mu
+
+    def build_updateZ_lastlayer(self,fftSz,nof,rho,mu_init,dictObj,b_init, cmplxdtype):
+        lastlayer = GetNextIterZ_lastlayer(rho,mu_init,dictObj,tf.fill(dims = self.get_z_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+        return lastlayer,lastlayer.mu
 
     def get_output(self,s,y,u,By,negC,itstats):
         x,Ax = self.xstep(y,u,By,negC)
         s_LF,QWs = negC
-        return (self.cropAndMerge.crop(self.IFFT[0](x[0])) + s_LF,itstats)
+        Dx0 = self.IFFT[0](self.dictObj[0].dmul(x[0]))
+        return (self.cropAndMerge.crop(tf.squeeze(Dx0,axis=-1)) + s_LF,itstats)
 
     def get_z_shape(self,fftSz,M):
-        return (1) + fftSz + (M,) + (1,)
+        return [1,fftSz[0],fftSz[1],M,1,]
+
+    def get_downsampled_z_shape(self,fftSz,M):
+        return ((1,int(fftSz[0]/2),int(fftSz[1]/2),M,1),(1,fftSz[0],int(fftSz[1]/2),M,1))
 
     # High-level Initialization Functions (x,y,u,Ax,By,C)
     def get_negative_C(self,s):
-        s_LF,s_HF,Ws = s
+        s_HF,s_LF,compressed = s
+        Ws = self.W(compressed)
         Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
         QWs = jrf.threeChannelQuantize(Ws,self.qY,self.qUV,Yoffset)
         return (s_LF,QWs)
     def init_x(self,s,negC):
-        s_LF,s_HF,QWs = s
+        s_HF,s_LF,compressed = s
+        s_LF,QWs = negC
         x = []
         x.append(self.xinit(self.FFT[0](util.addDim(s_HF)),layer = 0))
         for ii in range(1,self.noL):
@@ -101,7 +131,7 @@ class MultiLayerCSC(optmz.ADMM):
                 x.append(self.xinit(util.freq_downsample(x[ii - 1]),layer=ii))
             else:
                 x.append(self.xinit(x[ii - 1],layer = ii))
-        Ax = ([-QWs[layer] for layer in range(len(QWs))],x)
+        Ax = ([-QWs[ii] for ii in range(len(QWs))],x)
         return (x,Ax)
     def init_y(self,s,x,Ax,negC):
         Azero,Ax_layers = Ax
@@ -179,11 +209,19 @@ class MultiLayerCSC(optmz.ADMM):
         return recErr + penaltyErr + cnstrErr
     def reconstructionErrors(self,x,y):
         v,z = y
-        mu = self.updateZ_layer[0].mu
+        if strides[0] == 2:
+            mu = self.updateZ_layer[0][0].mu
+            #mu = self.updateZ_layer[0]['downsampled'].mu
+        else:
+            mu = self.updateZ_layer[0].mu
         reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul(x[0]))/self.FFT_factor[0]
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
-                mu = self.updateZ_layer[layer].mu
+                if strides[layer] == 2:
+                    mu = self.updateZ_layer[layer][0].mu
+                    #mu = self.updateZ_layer[layer]['downsampled'].mu
+                else:
+                    mu = self.updateZ_layer[layer].mu
             else:
                 mu = self.updateZ_lastlayer.mu
             if self.strides[layer - 1] == 2:
@@ -218,7 +256,11 @@ class MultiLayerCSC(optmz.ADMM):
         constraintErr = self.jpegConstraint_relaxed(eta,Azero,Bv)
         for layer in range(self.noL):
             if layer < self.noL - 1:
-                mu = self.updateZ_layer[layer].mu
+                if self.strides[layer] == 2:
+                    mu = self.updateZ_layer[layer][0].mu
+                    #mu = self.updateZ_layer[layer]['downsampled'].mu
+                else:
+                    mu = self.updateZ_layer[layer].mu
                 Bz_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
             else:
                 mu = self.updateZ_lastlayer.mu
@@ -237,7 +279,7 @@ class MultiLayerCSC(optmz.ADMM):
         return Dhx/tf.cast(Rsquared,self.cmplxdtype)
     def vinit(self,x_0,Azero,s_LF):
         Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
-        Dx = tf.reshape(Dx,Dx.shape[:-1])
+        Dx = tf.squeeze(Dx,axis=-1)
         croppedDx = self.cropAndMerge.crop(Dx)
         vpluss_LF,Bv = self.updatev((croppedDx + s_LF,Azero,[0.,0.,0.]))
         vpremerge = vpluss_LF - s_LF
@@ -273,15 +315,15 @@ class MultiLayerCSC(optmz.ADMM):
     def updateV(self,x_0,Azero,eta_over_rho,s_LF):
         Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
         # It might be helpful to build an object to couple cropping and padding so that it is never messed up. Best if this is done outside, because the cropping function can be used to get QWs.
-        Dx = tf.reshape(Dx,Dx.shape[:-1]) # add tf.crop_to_bounding_box here.
-        vpluss_LF,Bv = self.updatev((Dx + s_LF,Azero,eta_over_rho))
-        v = vpluss_LF - s_LF
+        Dx = tf.squeeze(Dx,axis=-1) # add tf.crop_to_bounding_box here.
+        vpluss_LF,Bv = self.updatev((self.cropAndMerge.crop(Dx) + s_LF,Azero,eta_over_rho))
+        v = self.cropAndMerge.merge((vpluss_LF - s_LF,Dx))
         v = util.addDim(v)
         return (self.FFT[0](v),Bv) # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
     def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
         assert(layer < self.noL - 1)
         if self.strides[layer] == 2:
-            return updateZ_downsample(x_nextlayer,Ax_relaxed,gamma_scaled,layer)
+            return self.updateZ_downsample(x_nextlayer,Ax_relaxed,gamma_scaled,layer)
         Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
         z = self.updateZ_layer[layer]((self.IFFT[layer](Dx),self.IFFT[layer](Ax_relaxed),self.IFFT[layer](gamma_scaled)))
         return self.FFT[layer](z)
@@ -292,17 +334,25 @@ class MultiLayerCSC(optmz.ADMM):
         Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
         Ax_relaxed_spatial = self.IFFT[layer](Ax_relaxed)
         gamma_spatial = self.IFFT[layer](gamma_scaled)
-        z_downsampled = self.updateZ_layer[layer]((self.IFFT[layer + 1](Dx),util.downsample(Ax_relaxed_spatial),util.downsample(gamma_spatial)))
+        Dx_spatial = self.IFFT[layer + 1](Dx)
+        Ax_ds = util.downsample(Ax_relaxed_spatial)
+        gamma_ds = util.downsample(gamma_spatial)
+        z_downsampled = self.updateZ_layer[layer][0]((Dx_spatial,Ax_ds,gamma_ds))
+        #z_downsampled = self.updateZ_layer[layer]['downsampled']((Dx_spatial,Ax_ds,gamma_ds))
 
         #shift downsampled
-        z_shift_downsampled = self.updateZ_layer_tossed[layer](util.shift_downsample(Ax_relaxed_spatial),util.shift_downsample(gamma_spatial))
+        #z_shift_downsampled = self.updateZ_layer[layer]['shifted']((util.shift_downsample(Ax_relaxed_spatial),util.shift_downsample(gamma_spatial)))
+        z_shift_downsampled = self.updateZ_layer[layer][1]((util.shift_downsample(Ax_relaxed_spatial),util.shift_downsample(gamma_spatial)))
 
-        z_missed_cols = self.updateZ_layer_tossed[layer](util.col_downsample(Ax_relaxed_spatial),util.col_downsample(gamma_spatial))
+        #z_missed_cols = self.updateZ_layer[layer]['missed_cols']((util.col_downsample(Ax_relaxed_spatial),util.col_downsample(gamma_spatial)))
+        z_missed_cols = self.updateZ_layer[layer][2]((util.col_downsample(Ax_relaxed_spatial),util.col_downsample(gamma_spatial)))
+
 
         # Need to build reconstruction from the three Zs
-        z_downsample_cols = util.alternate_concat((z_downsampled,z_shif_downsampled),axis = 2)
-
-        z = util.alternate_concat((z_downsample_cols,z_missed_cols),axis = 3)
+        #z_downsample_cols = self.updateZ_layer[layer]['shift_concat']((z_downsampled,z_shift_downsampled))
+        z_downsample_cols = self.updateZ_layer[layer][3]((z_downsampled,z_shift_downsampled))
+        #z = self.updateZ_layer[layer]['cols_concat']((z_downsample_cols,z_missed_cols))
+        z = self.updateZ_layer[layer][4]((z_downsample_cols,z_missed_cols))
         return self.FFT[layer](z)
 
     def updateZ_last(self,Ax_relaxed,gamma_scaled):
@@ -446,9 +496,7 @@ class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
         R = util.rotate_dims_left(self.dictObj.R)
-        return R*tf.keras.layers.ReLU(dtype=self.dtype)(-Ax_relaxed - gamma_scaled - R*self.b/(rho*mu))
-
-
+        return R*tf.keras.layers.ReLU(dtype=self.dtype)(-Ax_relaxed - gamma_scaled - R*self.b/(self.rho*self.mu))
 
 
 class GetNextIterGamma(tf.keras.layers.Layer):
@@ -476,8 +524,7 @@ class CropPadObject:
             stride_factor = 1
             for jj in range(0,ii):
                 stride_factor = stride_factor*strides[jj]
-            padding = padding + stride_factor*kernelSz[ii]
-        stride_factor = stride_factor*strides[len(kernelSz) - 1]
+            padding = padding + stride_factor*(kernelSz[ii] - 1)
         extra_padding = stride_factor - ((signalSz + padding) % stride_factor)
         self.build_crop_and_merge(signalSz,padding + extra_padding)
 
@@ -490,7 +537,7 @@ class CropPadObject:
                 padding_bottom[ii] = ((padding[ii] + 1)/2).astype('int')
         self.paddingTuple = ((padding_top[0],padding_bottom[0]),(padding_top[1],padding_bottom[1]))
         self.crop = tf.keras.layers.Cropping2D(self.paddingTuple,dtype=self.dtype)
-        pad = tf.keras.layers.ZeroPadding2D(padding = self.paddingTuple)
+        pad = tf.keras.layers.ZeroPadding2D(padding = self.paddingTuple,dtype=self.dtype)
         trues = tf.fill((1,signal_sz[0],signal_sz[1],1),1)
         mask = tf.cast(pad(trues),'bool')
         self.merge = Merge(pad,mask,dtype=self.dtype)
@@ -499,7 +546,7 @@ class CropPadObject:
         fftSz.append((signalSz[0] + self.paddingTuple[0][0] + self.paddingTuple[0][1],signalSz[1] + self.paddingTuple[1][0] + self.paddingTuple[1][1]))
         ii = 0
         for stride in strides:
-            fftSz.append((fftSz[ii][0]/stride,fftSz[ii][1]/stride))
+            fftSz.append((int(fftSz[ii][0]/stride),int(fftSz[ii][1]/stride)))
             ii += 1
         return fftSz
 
@@ -510,5 +557,5 @@ class Merge(tf.keras.layers.Layer):
         self.mask = mask
     def call(self,inputs):
         x,y = inputs
-        return tf.where(self.pad(x),y,self.mask)
+        return tf.where(self.mask,self.pad(x),y)
 
