@@ -139,7 +139,7 @@ def h(z,y):
 @tf.custom_gradient # bad gradient in respect to q, but q shouldn't depend on trainable variable
 def _quantize(w,q):
     def grad(g):
-        return tf.identity,None
+        return (tf.identity(g),None)
     return q*tf.math.round(w/q),grad
 
 #@tf.custom_gradient

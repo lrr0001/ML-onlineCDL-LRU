@@ -49,7 +49,7 @@ assert(paddingDiff[0][0] >= 0)
 assert(paddingDiff[0][1] >= 0)
 assert(paddingDiff[1][0] >= 0)
 assert(paddingDiff[1][1] >= 0)
-
+print(paddingDiff)
 
 #   ******** SETUP LOADING TFRECORD ********
 startr = paddingDiff[0][0]
@@ -64,11 +64,29 @@ def restore_double(x):
 def _parse_image_function(example_proto):
     x = tf.io.parse_single_example(example_proto, example_structure)
     highpass = restore_double(x['highpass'])
-    return ((restore_double(x['lowpass']),highpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
+    lowpass = restore_double(x['lowpass'])
+    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
 
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
+
+
+for (x,y) in dataset_batch:
+    print(x[0].shape)
+    print(x[1].shape)
+    print(x[2].shape)
+    print(y.shape)
+    print(tf.reduce_max(tf.abs(cropAndMerge.crop(x[0]) + cropAndMerge.crop(x[1]) - x[2])))
+    croppedHighpass = x[0][slice(None),slice(paddingTuple[0][0], paddingTuple[0][0] + targetSz[0]),slice(paddingTuple[1][0],paddingTuple[1][0] + targetSz[1]),slice(None)]
+    croppedLowpass = x[1][slice(None),slice(paddingTuple[0][0],paddingTuple[0][0] + targetSz[0]),slice(paddingTuple[1][0],paddingTuple[1][0] + targetSz[1]),slice(None)]
+    print(croppedHighpass.shape)
+    print(croppedLowpass.shape)
+    print(x[2].shape)
+    print(tf.reduce_max(tf.abs(croppedHighpass + croppedLowpass - x[2])))
+    print(tf.reduce_max(x[2]))
+    print(tf.reduce_min(x[2]))
+    break
 
 #   ******** BUILD MODEL ********
 CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],lraParam,noi,noL,cmplxdtype)
@@ -76,7 +94,7 @@ CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftS
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
 highpass = tf.keras.Input(shape=highpassShape,dtype=real_dtype)
-lowpass = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype = real_dtype)
+lowpass = tf.keras.Input(shape = highpassShape,dtype = real_dtype)
 compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
 inputs = (highpass,lowpass,compressed)
 
@@ -96,7 +114,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
     def on_epoch_end(self, batch, logs={}):
         self.times.append(time.time() - self.epoch_time_start)
 
-model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE)
+model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
 #model.save(experimentpath + modelfilename)
 time_callback = TimeHistory()
 for ii in range(num_of_saves):

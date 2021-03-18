@@ -4,12 +4,13 @@ import jpeg_related_functions as jrf
 # ************FUNCTION DEFINITION******************
 def savePatch(coord,lowpass,highpass,raw,padding,patch_size,qY,qUV,Yoffset,datapath,filename,dtype):
     rowCoord,colCoord = coord
-    lowpassPatch = lowpass[slice(rowCoord,rowCoord + patch_size[0]),slice(colCoord,colCoord + patch_size[1]),slice(None)]
+    lowpassPatch = lowpass[slice(rowCoord - padding[0][0],rowCoord + patch_size[0] + padding[0][1]),slice(colCoord - padding[1][0],colCoord + patch_size[1] + padding[1][1]),slice(None)]
+    #lowpassPatch = lowpass[slice(rowCoord,rowCoord + patch_size[0]),slice(colCoord,colCoord + patch_size[1]),slice(None)]
     rawPatch =  raw[slice(rowCoord,rowCoord + patch_size[0]),slice(colCoord,colCoord + patch_size[1]),slice(None)]
     W = jrf.RGB2JPEG_Coef(dtype = dtype)
     Wt = jrf.JPEG_Coef2RGB(dtype = dtype)
-    compressedPatch = Wt([jrf.quantize(W(tf.reshape(rawPatch,(1,) + rawPatch.shape))[ii],q,offset) for (ii,q,offset) in zip(range(3),(qY,qUV,qUV),(Yoffset,None,None))])
-    compressedPatch = tf.reshape(compressedPatch,compressedPatch.shape[1:])
+    compressedPatch = Wt([jrf.quantize(W(tf.expand-dims(rawPatch,axis=0)[ii],q,offset) for (ii,q,offset) in zip(range(3),(qY,qUV,qUV),(Yoffset,None,None))])
+    compressedPatch = tf.squeeze(compressedPatch,axis=0)
     highpassPatch = highpass[slice(rowCoord - padding[0][0],rowCoord + patch_size[0] + padding[0][1]),slice(colCoord - padding[1][0],colCoord + patch_size[1] + padding[1][1]),slice(None)]
     fid_raw = open(datapath + 'raw/' + filename,'wb')
     pkl.dump(rawPatch,fid_raw)
@@ -61,6 +62,7 @@ for datatype in ['train/','val/',]:
     for filename in filelist:
         fid = open(dataloadpath + datatype + filename,'rb')
         storedVar = pkl.load(fid)
+        fid.close()
         lowpass = storedVar['lowpass']
         highpass = storedVar['highpass']
         raw = storedVar['raw']

@@ -120,9 +120,9 @@ class MultiLayerCSC(optmz.ADMM):
         Ws = self.W(compressed)
         Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
         QWs = jrf.threeChannelQuantize(Ws,self.qY,self.qUV,Yoffset)
-        return (s_LF,QWs)
+        return (self.cropAndMerge.crop(s_LF),QWs)
     def init_x(self,s,negC):
-        s_HF,s_LF,compressed = s
+        s_HF,temp1,temp2 = s
         s_LF,QWs = negC
         x = []
         x.append(self.xinit(self.FFT[0](util.addDim(s_HF)),layer = 0))
@@ -132,7 +132,7 @@ class MultiLayerCSC(optmz.ADMM):
             else:
                 x.append(self.xinit(x[ii - 1],layer = ii))
         Ax = ([-QWs[ii] for ii in range(len(QWs))],x)
-        return (x,Ax)
+        return x,Ax
     def init_y(self,s,x,Ax,negC):
         Azero,Ax_layers = Ax
         s_LF,QWs = negC
@@ -143,7 +143,7 @@ class MultiLayerCSC(optmz.ADMM):
         z.append(self.zinit_last(Ax=Ax_layers[self.noL - 1]))
         y = (v,z)
         By = (Bv,z)
-        return (y,By)
+        return y,By
     def init_u(self,s,Ax,By,negC):
         Azero,Ax_layers = Ax
         Bv,Bz = By
@@ -151,7 +151,7 @@ class MultiLayerCSC(optmz.ADMM):
         for ii in range(self.noL):
             gamma.append(self.gammainit(Ax_layers[ii],Bz[ii],ii))
         eta = self.etainit(Azero,Bv)
-        return (eta,gamma)
+        return eta,gamma
 
 
     # High-level Update Functions for each iteration (x,y,u,Ax,By)
@@ -165,7 +165,7 @@ class MultiLayerCSC(optmz.ADMM):
                 x.append(self.updateX(z_prevlayer=util.freq_downsample(z[ii - 1]),z = z[ii],gamma_scaled = gamma[ii],layer=ii))
             else:
                 x.append(self.updateX(z_prevlayer=z[ii - 1],z = z[ii],gamma_scaled = gamma[ii],layer=ii))
-        return (x,(0.,x))
+        return x,(0.,x)
     def relax(self,Ax,By,negC):
         Azero,x = Ax
         s_LF,QWs = negC
@@ -174,7 +174,7 @@ class MultiLayerCSC(optmz.ADMM):
         for ii in range(self.noL):
             rootmux.append(self.relax_layers(x[ii],z[ii],ii))
         AzeroplusC = self.relax_zero(Bv,QWs)
-        return (AzeroplusC,rootmux)
+        return AzeroplusC,rootmux
     def ystep(self,x,u,Ax_relaxed,negC):
         eta,gamma = u
         AzeroplusC,Ax_layers = Ax_relaxed
@@ -186,7 +186,7 @@ class MultiLayerCSC(optmz.ADMM):
         v,Bv = self.updateV(x[0],AzeroplusC,eta,s_LF)
         y = (v,z)
         By = (Bv,z)
-        return (y,By)
+        return y,By
     def ustep(self,u,Ax_relaxed,By,negC):
         eta,gamma = u
         AzeroplusC,Ax_layers = Ax_relaxed
@@ -194,7 +194,7 @@ class MultiLayerCSC(optmz.ADMM):
         for ii in range(self.noL):
             gamma[ii] = self.updateGamma(gamma[ii],z[ii],Ax_layers[ii],ii)
         eta = self.updateEta(eta,AzeroplusC,Bv)
-        return (eta,gamma)
+        return eta,gamma
 
     #High-level Langrangian Evalaluation Functions
     def evaluateLagrangian(self,x,y,u,By,negC):
@@ -319,7 +319,7 @@ class MultiLayerCSC(optmz.ADMM):
         vpluss_LF,Bv = self.updatev((self.cropAndMerge.crop(Dx) + s_LF,Azero,eta_over_rho))
         v = self.cropAndMerge.merge((vpluss_LF - s_LF,Dx))
         v = util.addDim(v)
-        return (self.FFT[0](v),Bv) # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
+        return self.FFT[0](v),Bv # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
     def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
         assert(layer < self.noL - 1)
         if self.strides[layer] == 2:

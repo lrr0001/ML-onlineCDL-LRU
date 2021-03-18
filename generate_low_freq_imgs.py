@@ -6,7 +6,7 @@ import pickle as pkl
 jpeg_quality = 20
 rho = 1.
 alpha = 1.5
-noi = 10
+noi = 32
 lmbda = 1.
 dtype = 'float64'
 
@@ -31,6 +31,7 @@ fftSz1 = (480,320)
 fftSz2 = (320,480)
 smooth_jpeg1 = jrf.Smooth_JPEG(rho,alpha,noi,qY,qUV,lmbda,fftSz1,dtype=dtype)
 smooth_jpeg2 = jrf.Smooth_JPEG(rho,alpha,noi,qY,qUV,lmbda,fftSz2,dtype=dtype)
+Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
 # Loop through images
 dataPath = 'data/original/simpleTest/'
 filelist = os.listdir(dataPath)
@@ -44,10 +45,10 @@ for datatype in ['train/','val/',]:
         # crop out a row and a column
         loadedImg = loadedImg[slice(0,loadedImgShape[0] - (loadedImgShape[0] % 8)),slice(0,loadedImgShape[1] - (loadedImgShape[1] % 8)),slice(None)]
         if loadedImgShape[0] - (loadedImgShape[0] % 8) == 480 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 320:
-            compressedImg = smooth_jpeg1.Wt(smooth_jpeg1.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)))
+            compressedImg = smooth_jpeg1.Wt(jrf.threeChannelQuantize(smooth_jpeg1.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
             lowpass,negC = smooth_jpeg1(compressedImg)
         elif loadedImgShape[0] - (loadedImgShape[0] % 8) == 320 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 480:
-            compressedImg = smooth_jpeg2.Wt(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)))
+            compressedImg = smooth_jpeg2.Wt(jrf.threeChannelQuantize(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
             lowpass,negC = smooth_jpeg2(compressedImg)
         else:
             raise ValueError('Unexpected Shape!')
