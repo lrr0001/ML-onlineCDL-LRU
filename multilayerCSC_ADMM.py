@@ -47,15 +47,12 @@ class MultiLayerCSC(optmz.ADMM):
         self.strides = strides
         self.dictObj = []
         self.updateX_layer = []
-        self.FFT = []
-        self.IFFT = []
-        self.FFT_factor = [] 
+
         for ii in range(noL):
             self.dictObj.append(self.build_dict_obj(fftSz[ii],D[ii],rho,lraParam,cmplxdtype,ii))
             self.updateX_layer.append(GetNextIterX(tf.cast(rho,dtype=cmplxdtype),self.dictObj[ii],dtype=cmplxdtype))
-            self.FFT.append(transf.fft2d_inner(fftSz[ii]))
-            self.IFFT.append(transf.ifft2d_inner(fftSz[ii]))
-            self.FFT_factor.append(np.prod(fftSz[ii]))
+
+        self.FFT,self.IFFT,self.FFT_factor = self.build_fft_layers(fftSz,noL)
 
         self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype)
         reversed_updateZ_layer = []
@@ -76,6 +73,16 @@ class MultiLayerCSC(optmz.ADMM):
         self.updateeta = jrf.GammaUpdate_JPEG(dtype=cmplxdtype.real_dtype)
         self.qY = qY
         self.qUV = qUV
+
+    def build_fft_layers(self,fftSz,noL):
+        FFT = []
+        IFFT = []
+        FFT_factor = []
+        for ii in range(noL):
+            FFT.append(transf.fft2d_inner(fftSz[ii]))
+            IFFT.append(transf.ifft2d_inner(fftSz[ii]))
+            FFT_factor.append(np.prod(fftSz[ii]))
+        return FFT,IFFT,FFT_factor
 
     def build_dict_obj(self,fftSz,D,rho,lraParam,cmplxdtype,layer):
         if layer == 0:
@@ -362,6 +369,7 @@ class MultiLayerCSC(optmz.ADMM):
     def updateGamma(self,gamma_scaled,z,Ax_relaxed,layer):
         if layer < self.noL - 1:
             #z_over_R = z/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+            print(z.dtype)
             z_over_R = self.dictObj[layer].divide_by_R(z)
         else:
             z_over_R = z

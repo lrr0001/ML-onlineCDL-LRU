@@ -21,7 +21,7 @@ step_size = 0.1
 experimentpath = 'data/experiment/simpleTest/experiment1/'
 def checkpointfilename(ii):
     return 'checkpoint_epoch' + str(ii) + '.ckpt'
-modelfilename = 'initial_model.pb'
+modelfilename = 'initial_model.ckpt'
 fid = open(experimentpath + 'problem_param.pckl','rb')
 problem_param = pkl.load(fid)
 fid.close()
@@ -115,7 +115,11 @@ class TimeHistory(tf.keras.callbacks.Callback):
         self.times.append(time.time() - self.epoch_time_start)
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
-model.save(experimentpath + modelfilename)
+model.save_weights(experimentpath + modelfilename)
+sha_name = "SHA.txt"
+log_sha_command = "git log --pretty=format:'%h' -n 1 >> "
+import os
+os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
 for ii in range(num_of_saves):
     model.fit(x = dataset_batch,epochs = noe_per_save,shuffle=False,callbacks=[time_callback])

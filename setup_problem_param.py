@@ -2,12 +2,12 @@ import tensorflow as tf
 import pickle as pkl
 import numpy as np
 
-nof = [32,]
+nof = [32,64]
 noc = 3
-stride = []
-fltrSz = ((5,5),)
-noL = 1
-noi = 96 # 96
+stride = [2]
+fltrSz = ((5,5),(7,7))
+noL = len(fltrSz)
+noi = 48 # 96
 
 D = []
 D.append(np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64'))

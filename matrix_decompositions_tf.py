@@ -15,7 +15,7 @@ class dictionary_object2D(ppg.PostProcess):
         self.epsilon = epsilon
         self.rho = rho
         self.lraParam = lraParam
-
+        self.FFT = transf.fft2d_inner(fftSz)
         Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof,name=name)
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + 'dmul',**kwargs)
@@ -31,7 +31,7 @@ class dictionary_object2D(ppg.PostProcess):
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
         #self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
         #self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False) # keras may not like this
-        return transf.fft2d_inner(fftSz)(self.divide_by_R.D)    
+        return self.FFT(self.divide_by_R.D)    
 
     def Dmul(self,inputs):
         return self.dmul(inputs)
@@ -61,7 +61,7 @@ class dictionary_object2D(ppg.PostProcess):
         
         # Compute DFT (The conjugate is necessary because F{A} = F{U}F{V}^T
         Uf = util.complexNum(U)
-        Vf = tf.math.conj(transf.fft2d_inner(self.fftSz)(V))
+        Vf = tf.math.conj(self.FFT(V))
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df,L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
@@ -125,6 +125,7 @@ class dictionary_object2D_init(dictionary_object2D):
         self.rho = rho
         self.lraParam = lraParam
         self.name = name
+        self.FFT = transf.fft2d_inner(self.fftSz)
         Df = self.init_dict(fftSz=fftSz,D=D,name=name)
 
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
@@ -142,12 +143,12 @@ class dictionary_object2D_init(dictionary_object2D):
         #return transf.fft2d_inner(fftSz)(self.D)
         noc = D.shape[-2]
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
-        return transf.fft2d_inner(fftSz)(self.divide_by_R.D)
+        return self.FFT(self.divide_by_R.D)
 
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
         D = self.get_constrained_D(self.dhmul.Df)
-        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D)) # Fix this please.
+        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
         Df,self.qinv.L = self._update_decomposition()
         return [self.divide_by_R.D.assign(D),self.divide_by_R.R.assign(computeR(D,D.shape[4])),self.dhmul.Df.assign(Df),self.qinv.L]
 
@@ -166,7 +167,7 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         D = self.get_constrained_D(self.dhmul.Df)  
         self.divide_by_R.D = self.divide_by_R.D.assign(D)
         self.divide_by_R.R = self.divide_by_R.R.assign(computeR(D,D.shape[4]))
-        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D))
+        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
         Df,self.qinv.L = self._update_decomposition()
         return [self.divide_by_R.D,self.divide_by_R.R,self.dhmul.Df.assign(Df),self.qinv.L]
 
@@ -511,4 +512,4 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
             self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False)
     def call(self,inputs):
         R = tf.cast(tf.reshape(self.R,self.R.shape[:2] + (self.R.shape[3],self.R.shape[2],) + self.R.shape[4:]),dtype=self.dtype)
-        return inputs/self.R
+        return inputs/R
