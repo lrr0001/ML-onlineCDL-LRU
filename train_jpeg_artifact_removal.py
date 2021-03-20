@@ -115,7 +115,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
         self.times.append(time.time() - self.epoch_time_start)
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
-#model.save(experimentpath + modelfilename)
+model.save(experimentpath + modelfilename)
 time_callback = TimeHistory()
 for ii in range(num_of_saves):
     model.fit(x = dataset_batch,epochs = noe_per_save,shuffle=False,callbacks=[time_callback])

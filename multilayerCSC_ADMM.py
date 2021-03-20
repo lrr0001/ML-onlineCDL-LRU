@@ -243,7 +243,8 @@ class MultiLayerCSC(optmz.ADMM):
         for layer in range(self.noL):
             if layer < self.noL - 1:
                 mu = self.updateZ_layer[layer].mu
-                z_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+                #z_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+                z_over_R = self.dictObj[layer].divide_by_R(Bz[layer])
             else:
                 mu = self.updateZ_lastlayer.mu
                 z_over_R = Bz[layer]
@@ -261,7 +262,7 @@ class MultiLayerCSC(optmz.ADMM):
                     #mu = self.updateZ_layer[layer]['downsampled'].mu
                 else:
                     mu = self.updateZ_layer[layer].mu
-                Bz_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+                Bz_over_R = self.dictObj[layer].divide_by_R(Bz[layer])
             else:
                 mu = self.updateZ_lastlayer.mu
                 Bz_over_R = Bz[layer]
@@ -273,9 +274,9 @@ class MultiLayerCSC(optmz.ADMM):
         if layer == 0:
             Dhx = self.dictObj[layer].dhmul(xprev)
         else:
-            Rprev = util.rotate_dims_left(self.dictObj[layer - 1].R,5)
+            Rprev = util.rotate_dims_left(self.dictObj[layer - 1].divide_by_R.R,5) # Fix this later, can be implemented more efficiently
             Dhx = self.dictObj[layer].dhmul(xprev*tf.cast(Rprev,self.cmplxdtype))
-        Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].R),5)
+        Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].divide_by_R.R),5) # Fix this later, can be implemented more efficiently
         return Dhx/tf.cast(Rsquared,self.cmplxdtype)
     def vinit(self,x_0,Azero,s_LF):
         Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
@@ -301,12 +302,12 @@ class MultiLayerCSC(optmz.ADMM):
         if layer == self.noL - 1:
             return self.updateX_layer[layer]((z_prevlayer,z,gamma_scaled))
         else:
-            R = tf.cast(util.rotate_dims_left(self.dictObj[layer].R,5),dtype=self.cmplxdtype)
-            return self.updateX_layer[layer]((z_prevlayer,z/R,gamma_scaled))
+            #R = tf.cast(util.rotate_dims_left(self.dictObj[layer].R,5),dtype=self.cmplxdtype)
+            return self.updateX_layer[layer]((z_prevlayer,self.dictObj[layer].divide_by_R(z),gamma_scaled))
     def relax_layers(self,x,z,layer):
         if layer < self.noL - 1:
-            R = tf.cast(util.rotate_dims_left(self.dictObj[layer].R,5),dtype=self.cmplxdtype)
-            z_over_R = z/R
+            #R = tf.cast(util.rotate_dims_left(self.dictObj[layer].R,5),dtype=self.cmplxdtype)
+            z_over_R = self.dictObj[layer].divide_by_R(z)
         else:
             z_over_R = z
         return self.relax_layer((x,z_over_R))
@@ -360,7 +361,8 @@ class MultiLayerCSC(optmz.ADMM):
         return self.FFT[self.noL - 1](z)
     def updateGamma(self,gamma_scaled,z,Ax_relaxed,layer):
         if layer < self.noL - 1:
-            z_over_R = z/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+            #z_over_R = z/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+            z_over_R = self.dictObj[layer].divide_by_R(z)
         else:
             z_over_R = z
         return self.updateGamma_layer((gamma_scaled,z_over_R,Ax_relaxed))
@@ -457,12 +459,13 @@ class GetNextIterZ(tf.keras.layers.Layer):
         self.dictObj = dictObj
         self.dictObj_nextlayer = dictObj_nextlayer
         self.b = tf.Variable(b_init,trainable=True,dtype=self.dtype)
+        self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
     def call(self,inputs):
         # inputs are in spatial domain
         Dx_nextlayer,Ax_relaxed,gamma_scaled = inputs
-        currR = util.rotate_dims_left(self.dictObj.R,5)
+        currR = util.rotate_dims_left(self.dictObj.divide_by_R.R,5)
         leadingFactor = 1/(self.mu_nextlayer + self.rho*self.mu/currR**2)
-        return leadingFactor*tf.keras.layers.ReLU(dtype=self.dtype)(self.mu_nextlayer*Dx_nextlayer - (self.rho*self.mu/currR)*(Ax_relaxed + gamma_scaled) - self.b)
+        return leadingFactor*self.relu(self.mu_nextlayer*Dx_nextlayer - (self.rho*self.mu/currR)*(Ax_relaxed + gamma_scaled) - self.b)
 
 
 
@@ -481,10 +484,11 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
         self.mu = tf.Variable(mu_init,trainable=True,dtype=self.dtype)
         self.dictObj = dictObj
         self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=self.dtype) # Is this an active design decision to avoid dependence on mu?
+        self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
-        R = util.rotate_dims_left(self.dictObj.R)
-        return tf.keras.layers.ReLU(dtype=self.dtype)(-Ax_relaxed - gamma_scaled - R*self.b)
+        R = util.rotate_dims_left(self.dictObj.divide_by_R.R)
+        return self.relu(-Ax_relaxed - gamma_scaled - R*self.b) # Fix this: Should declare layer in __init__
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def __init__(self,rho,mu,dictObj,b,*args,**kwargs):
@@ -493,10 +497,11 @@ class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
         self.dictObj = dictObj
         self.b = b
         self.rho = rho
+        self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
-        R = util.rotate_dims_left(self.dictObj.R)
-        return R*tf.keras.layers.ReLU(dtype=self.dtype)(-Ax_relaxed - gamma_scaled - R*self.b/(self.rho*self.mu))
+        R = util.rotate_dims_left(self.dictObj.divide_by_R.R)
+        return R*self.relu(-Ax_relaxed - gamma_scaled - R*self.b/(self.rho*self.mu))
 
 
 class GetNextIterGamma(tf.keras.layers.Layer):

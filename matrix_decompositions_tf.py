@@ -16,22 +16,22 @@ class dictionary_object2D(ppg.PostProcess):
         self.rho = rho
         self.lraParam = lraParam
 
-        Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof)
-
+        Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof,name=name)
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + 'dmul',**kwargs)
         self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,name=name + 'qinv',**kwargs)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
-    def init_dict(self,fltrSz,fftSz,noc,nof):
+    def init_dict(self,fltrSz,fftSz,noc,nof,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Drand = tf.random.normal(shape=(1,) + fltrSz + (noc,nof),dtype=tf.dtypes.as_dtype(self.dtype).real_dtype)
         Dmeaned = Drand - tf.math.reduce_mean(input_tensor=Drand,axis = (1,2),keepdims=True)
         Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
-        self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
-        self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False) # keras may not like this
-        return transf.fft2d_inner(fftSz)(self.D)       
+        self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
+        #self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
+        #self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False) # keras may not like this
+        return transf.fft2d_inner(fftSz)(self.divide_by_R.D)    
 
     def Dmul(self,inputs):
         return self.dmul(inputs)
@@ -42,8 +42,8 @@ class dictionary_object2D(ppg.PostProcess):
     def Qinv(self,inputs):
         return self.qinv(inputs)
 
-    def computeR(self,D):
-        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
+#    def computeR(self,D):
+#        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
 
     def get_constrained_D(self,Df):
         return ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,Df)
@@ -52,20 +52,20 @@ class dictionary_object2D(ppg.PostProcess):
         Dnew = self.get_constrained_D(self.dhmul.Df)
 
         # compute low rank approximation of the update
-        theUpdate = Dnew - self.D
+        theUpdate = Dnew - self.divide_by_R.D
         U,V,approx = stack_svd(theUpdate,5,**self.lraParam)
  
         # Update Spatial-Domain Dictionary and Normalization Factor
-        self.D = self.D.assign(self.D + approx)
-        self.R = self.R.assign(self.computeR(self.D))
+        D = self.divide_by_R.D.assign_add(approx)
+        R = self.divide_by_R.R.assign(computeR(D,D.shape[4]))
         
         # Compute DFT (The conjugate is necessary because F{A} = F{U}F{V}^T
         Uf = util.complexNum(U)
         Vf = tf.math.conj(transf.fft2d_inner(self.fftSz)(V))
 
         # Update Decomposition and Frequency-Domain Dictionary
-        Df,self.qinv.L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
-        return [self.D,self.R,self.dhmul.Df.assign(Df),self.qinv.L]
+        Df,L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
+        return [D,R,self.dhmul.Df.assign(Df),self.qinv.L.assign(L)]
 
     def _update_decomposition(self,U,V,Dfprev,L):
         L = self._rank1_updates(U,V,L)
@@ -80,12 +80,13 @@ class dictionary_object2D(ppg.PostProcess):
         if self.qinv.wdbry:
             eigvals,eigvecs = tf.linalg.eigh(tf.linalg.matmul(V,V,adjoint_a=True))
             for val,vec in zip(tf.unstack(eigvals,axis=-1),tf.unstack(tf.linalg.matmul(U,eigvecs),axis=-1)):
-                L = self.qinv.L.assign(tfr.cholesky_update(L,vec,val))
+                L = tfr.cholesky_update(L,vec,val)#self.qinv.L.assign(tfr.cholesky_update(L,vec,val))
         else:
             # Redundant Computation: This is also computed in the rank-2 eigendecomposition
             UhU = tf.math.reduce_sum(tf.math.conj(U)*U,axis=3,keepdims=False) # conjugate unnecessary: U is real.
             for v,uhu in zip(tf.unstack(V,axis=-1),tf.unstack(UhU,axis=-1)):
-                L = self.qinv.L.assign(tfr.cholesky_update(L,v,uhu))
+                #L = self.qinv.L.assign(tfr.cholesky_update(L,v,uhu))
+                L = tfr.cholesky_update(L,v,uhu)
         return L
 
     def _rank2_updates(self,U,V,Dfprev,L):
@@ -109,7 +110,8 @@ class dictionary_object2D(ppg.PostProcess):
     def _eig_chol_update(self,eigvals,eigvecs,L):
         for vals,vecs in zip(eigvals,eigvecs):
             for val,vec in zip(tf.unstack(vals,axis=0),tf.unstack(vecs,axis=0)):
-                L = self.qinv.L.assign(tfr.cholesky_update(L,vec,val))
+                #L = self.qinv.L.assign(tfr.cholesky_update(L,vec,val))
+                L = tfr.cholesky_update(L,vec,val)
         return L
 
 class dictionary_object2D_init(dictionary_object2D):
@@ -122,8 +124,8 @@ class dictionary_object2D_init(dictionary_object2D):
         self.epsilon = epsilon
         self.rho = rho
         self.lraParam = lraParam
-
-        Df = self.init_dict(fftSz=fftSz,D=D)
+        self.name = name
+        Df = self.init_dict(fftSz=fftSz,D=D,name=name)
 
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + '/dmul',**kwargs)
@@ -131,20 +133,23 @@ class dictionary_object2D_init(dictionary_object2D):
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
-    def init_dict(self,fftSz,D):
+    def init_dict(self,fftSz,D,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Dmeaned = D - tf.math.reduce_mean(input_tensor=D,axis = (1,2),keepdims=True)
         Dnormalized = D.shape[-2]*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
-        self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
-        self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False)
-        return transf.fft2d_inner(fftSz)(self.D)       
+        #self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
+        #self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False)
+        #return transf.fft2d_inner(fftSz)(self.D)
+        noc = D.shape[-2]
+        self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
+        return transf.fft2d_inner(fftSz)(self.divide_by_R.D)
 
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
         D = self.get_constrained_D(self.dhmul.Df)
-        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D))
+        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D)) # Fix this please.
         Df,self.qinv.L = self._update_decomposition()
-        return [self.D.assign(D),self.R.assign(self.computeR(D)),self.dhmul.Df.assign(Df),self.qinv.L]
+        return [self.divide_by_R.D.assign(D),self.divide_by_R.R.assign(computeR(D,D.shape[4])),self.dhmul.Df.assign(Df),self.qinv.L]
 
     def _update_decomposition(self,U=None,V=None):
         if self.qinv.wdbry:
@@ -158,12 +163,12 @@ class dictionary_object2D_full(dictionary_object2D):
 
 class dictionary_object2D_init_full(dictionary_object2D_init):
     def _dict_update(self):
-        D = self.get_constrained_D(self.dhmul.Df)
-        self.D = self.D.assign(D)
-        self.R = self.R.assign(self.computeR(D))
+        D = self.get_constrained_D(self.dhmul.Df)  
+        self.divide_by_R.D = self.divide_by_R.D.assign(D)
+        self.divide_by_R.R = self.divide_by_R.R.assign(computeR(D,D.shape[4]))
         self.dhmul.Dfprev = self.dhmul.Dfprev.assign(transf.fft2d_inner(self.fftSz)(D))
         Df,self.qinv.L = self._update_decomposition()
-        return [self.D.assign(D),self.R.assign(self.computeR(D)),self.dhmul.Df.assign(Df),self.qinv.L]
+        return [self.divide_by_R.D,self.divide_by_R.R,self.dhmul.Df.assign(Df),self.qinv.L]
 
     def _update_decomposition(self,U=None,V=None):
         if self.qinv.wdbry:
@@ -493,3 +498,17 @@ def stack_svd(x,r,**kwargs):
     U = tf.reshape(U,(1,)*s + tuple(U.shape))
     V = tf.reshape(V,tuple([x.shape[ii] for ii in forwardPerm[1:]]) + (V.shape[-1],))
     return U,V,approx
+
+def computeR(D,noc):
+    return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/noc
+
+
+class Coef_Divide_By_R(tf.keras.layers.Layer):
+    def __init__(self,D,noc,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        with tf.name_scope(self.name):
+            self.D = tf.Variable(initial_value = D,trainable=False)
+            self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False)
+    def call(self,inputs):
+        R = tf.cast(tf.reshape(self.R,self.R.shape[:2] + (self.R.shape[3],self.R.shape[2],) + self.R.shape[4:]),dtype=self.dtype)
+        return inputs/self.R

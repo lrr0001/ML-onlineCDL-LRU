@@ -6,7 +6,7 @@ import pickle as pkl
 jpeg_quality = 20
 rho = 1.
 alpha = 1.5
-noi = 32
+noi = 0
 lmbda = 1.
 dtype = 'float64'
 
