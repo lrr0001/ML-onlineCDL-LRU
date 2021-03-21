@@ -43,6 +43,16 @@ class MultiLayerCSC(optmz.ADMM):
         qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
         self.initializeLayers(rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype)
+    def get_config(self):
+        config_dict = {'complex_dtype': self.cmplxdtype,
+                       'num_of_Layers': self.noL,
+                       'strides': self.strides,
+                       'qY': self.qY,
+                       'qUV': self.qUV,
+                       'rho': self.rho,
+                       'noi': self.noi}
+        return config_dict
+
     def initializeLayers(self,rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype):
         self.strides = strides
         self.dictObj = []
@@ -369,7 +379,6 @@ class MultiLayerCSC(optmz.ADMM):
     def updateGamma(self,gamma_scaled,z,Ax_relaxed,layer):
         if layer < self.noL - 1:
             #z_over_R = z/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
-            print(z.dtype)
             z_over_R = self.dictObj[layer].divide_by_R(z)
         else:
             z_over_R = z
@@ -428,6 +437,8 @@ class GetNextIterX(tf.keras.layers.Layer):
     def call(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
         return self.dictObj.qinv(self.dictObj.dhmul(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))
+    def get_config(self):
+        return {'rho': self.rho}
 
 class GetRelaxedAx(tf.keras.layers.Layer):
     '''
@@ -474,7 +485,8 @@ class GetNextIterZ(tf.keras.layers.Layer):
         currR = util.rotate_dims_left(self.dictObj.divide_by_R.R,5)
         leadingFactor = 1/(self.mu_nextlayer + self.rho*self.mu/currR**2)
         return leadingFactor*self.relu(self.mu_nextlayer*Dx_nextlayer - (self.rho*self.mu/currR)*(Ax_relaxed + gamma_scaled) - self.b)
-
+    def get_config(self):
+        return {'rho': self.rho}
 
 
 class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
@@ -496,7 +508,7 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
         R = util.rotate_dims_left(self.dictObj.divide_by_R.R)
-        return self.relu(-Ax_relaxed - gamma_scaled - R*self.b) # Fix this: Should declare layer in __init__
+        return self.relu(-Ax_relaxed - gamma_scaled - R*self.b)
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def __init__(self,rho,mu,dictObj,b,*args,**kwargs):
@@ -514,13 +526,13 @@ class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
 
 class GetNextIterGamma(tf.keras.layers.Layer):
     '''
-      inputs: All must be in spatial domain.
+      inputs: All must be in frequency domain.
 
         gamma_scaled: \frac{\gamma_{\ell}^{(k)}}{\rho\sqrt{\mu_{\ell}}
         z_over_R: \mR_{\ell}^{-1}\vz_{\ell}^{(k + 1)}
         Ax_relaxed: -\valpha_k\mR_{\ell}^{-1}\vx_{\ell}^{(k + 1)} - (1 - \valpha_k)\mR_{\ell}^{-1}\vz_{\ell}^{(k)}
 
-      outputs: Also in spatial domain
+      outputs: Also in frequency domain
         gamma_scaled: \frac{\vgamma_{\ell}^{(k + 1)}}{\rho\sqrt{\mu_{\ell}}
     '''
     def __init__(self,*args,**kwargs):
@@ -571,4 +583,5 @@ class Merge(tf.keras.layers.Layer):
     def call(self,inputs):
         x,y = inputs
         return tf.where(self.mask,self.pad(x),y)
-
+    def get_config(self):
+        return {'mask': self.mask, 'pad': self.pad}

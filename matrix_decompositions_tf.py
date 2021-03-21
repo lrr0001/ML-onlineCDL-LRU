@@ -20,6 +20,7 @@ class dictionary_object2D(ppg.PostProcess):
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + 'dmul',**kwargs)
         self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,name=name + 'qinv',**kwargs)
+        self.get_constrained_D = ifft_trunc_normalize(fltrSz,fftSz,noc,dtype=dtype)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
@@ -44,9 +45,6 @@ class dictionary_object2D(ppg.PostProcess):
 
 #    def computeR(self,D):
 #        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
-
-    def get_constrained_D(self,Df):
-        return ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,Df)
 
     def _dict_update(self):
         Dnew = self.get_constrained_D(self.dhmul.Df)
@@ -131,6 +129,7 @@ class dictionary_object2D_init(dictionary_object2D):
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + '/dmul',**kwargs)
         self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=name + '/qinv',**kwargs)
+        self.get_constrained_D = ifft_trunc_normalize(fltrSz,fftSz,noc,dtype=dtype)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
@@ -192,6 +191,7 @@ class QInv(tf.keras.layers.Layer):
         self.rho = rho
         self.init_chol(noc,nof)
 
+
         def solve_inverse(x):
             # I want auto-differentiation of the input, but not of the weights.
             # The solution? Create a pass-through "gradient layer" that computes the gradient for the weights.
@@ -222,6 +222,9 @@ class QInv(tf.keras.layers.Layer):
 
         self.solve_inverse = lambda x: solve_inverse(x)
 
+    def get_config(self):
+        return {'rho': self.rho}
+
     def call(self, inputs):
         if self.wdbry:
             y = self.dmul(inputs)
@@ -246,6 +249,8 @@ class QInv_auto(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         self.Df = tf.Variable(initial_value=dhmul.Df,trainable=True)
         self.rho = rho
+    def get_config(self):
+        return {'rho': self.rho}
     def call(self,inputs):
         if self.wdbry:
             Dx = tf.linalg.matmul(self.Df,inputs)
@@ -275,6 +280,8 @@ class DhMul(tf.keras.layers.Layer):
             self.Dfprev = tf.Variable(initial_value=tf.identity(Df),trainable=False,dtype=dtype)
             self.Df = tf.Variable(initial_value=tf.identity(self.Dfprev),trainable=True)
         self.varname = self.Df.name
+    def get_config(self):
+        return {'varname': self.varname}
 
     def call(self, inputs):
         return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
@@ -463,10 +470,18 @@ def randomized_range_finder(A, rangeSize, n_iter,
 
 
 
-def ifft_trunc_normalize(fltrSz,fftSz,noc,Df):
-    D = transf.ifft2d_inner(fftSz)(Df)
-    Dtrunc = D[slice(None),slice(0,fltrSz[0],1),slice(0,fltrSz[1],1),slice(None),slice(None)]
-    return noc*Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
+class ifft_trunc_normalize(tf.keras.layers.Layer):
+    def __init__(self,fltrSz,fftSz,noc,Df,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.ifft = transf.ifft2d_inner(fftSz)
+        self.fltrSz = fltrSz
+        self.noc = noc
+    def get_config(self):
+        return {'fltrSz': self.fltrSz, 'noc': self.noc}
+    def call(inputs):
+        D = self.ifft(inputs)
+        Dtrunc = D[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
+        return self.noc*Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
 
 def rank2eigen(U,V,epsilon=1e-5):
     vhv = tf.math.reduce_sum(tf.math.conj(V)*V,axis=-1,keepdims=True)
@@ -511,5 +526,5 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
             self.D = tf.Variable(initial_value = D,trainable=False)
             self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False)
     def call(self,inputs):
-        R = tf.cast(tf.reshape(self.R,self.R.shape[:2] + (self.R.shape[3],self.R.shape[2],) + self.R.shape[4:]),dtype=self.dtype)
+        R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
         return inputs/R

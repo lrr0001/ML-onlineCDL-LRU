@@ -3,6 +3,8 @@ import jpeg_related_functions as jrf
 import multilayerCSC_ADMM as mlcsc
 import numpy as np
 import pickle as pkl
+import datetime
+
 
 #   ******** ALGORITHM-SPECIFIC HYPERPARAMETERS ********
 rho = 1.
@@ -12,8 +14,8 @@ b_init = 0.
 lraParam = {'n_components': 3}
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 8
-noe_per_save = 4
-num_of_saves = 24
+noe_per_save = 1
+num_of_saves = 2
 step_size = 0.1
 
 
@@ -106,13 +108,28 @@ model = ppg.Model_PostProcess(inputs,reconstruction)
 import time
 class TimeHistory(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
-        self.times = []
+        self.train_times = []
+
+    def on_test_begin(self, logs={}):
+        self.test_times = []
+
+    def on_test_batch_begin(self, batch, logs={}):
+        self.test_batch_start_time = time.time()
+
+    def on_test_batch_end(self, batch,logs={}):
+        self.test_times.append(time.time() - self.test_batch_start_time)
 
     def on_epoch_begin(self, batch, logs={}):
         self.epoch_time_start = time.time()
 
     def on_epoch_end(self, batch, logs={}):
-        self.times.append(time.time() - self.epoch_time_start)
+        self.train_times.append(time.time() - self.epoch_time_start)
+log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+tensorboard_callback = tf.keras.callbacks.TensorBoard(
+      log_dir = log_dir,
+      histogram_freq = 1,
+      profile_batch = '2,5'
+)
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
 model.save_weights(experimentpath + modelfilename)
@@ -122,5 +139,10 @@ import os
 os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
 for ii in range(num_of_saves):
-    model.fit(x = dataset_batch,epochs = noe_per_save,shuffle=False,callbacks=[time_callback])
+    if ii == 1:
+        with tf.profiler.experimental.Profile(log_dir):
+            model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=8,shuffle=False,callbacks = [time_callback,])
+    else:
+        model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=8,shuffle=False,callbacks = [time_callback,])
+    #model.evaluate(x = dataset_batch,verbose=True,steps=5,callbacks=[TimeHostory)
     model.save_weights(experimentpath + checkpointfilename(ii*noe_per_save))

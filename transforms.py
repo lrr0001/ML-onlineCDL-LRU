@@ -7,6 +7,8 @@ class fft2d(tf.keras.layers.Layer):
         super().__init__(*args,autocast=False,**kwargs)
     def call(self,inputs):
         return tf.signal.rfft2d(input_tensor=inputs,fft_length=self.fftSz)
+    def get_config(self):
+        return {'fftSz': fftSz}
 
 
 class switch_spatial_and_channelfltr(tf.keras.layers.Layer):

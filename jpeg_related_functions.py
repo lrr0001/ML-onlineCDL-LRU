@@ -72,6 +72,8 @@ class RGB2JPEG_Coef(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         self.dct_filters = tf.cast(generate_dct2D_filters(),dtype=self.dtype)
         self.downsample = tf.keras.layers.AveragePooling2D(pool_size=(2,2),strides=(2,2),padding='valid',dtype=self.dtype)
+    def get_config(self):
+        return {'dct_filters': self.dct_filters}
     def call(self,inputs):
         yuv = tf.image.rgb_to_yuv(inputs)
         y,u,v = tf.split(yuv,axis=3,num_or_size_splits=3)
@@ -87,6 +89,8 @@ class JPEG_Coef2RGB(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         self.idct_filters = tf.cast(generate_idct2D_filters(),dtype=self.dtype)
         self.Upsample = tf.keras.layers.UpSampling2D(size=(2,2),interpolation='nearest',dtype=self.dtype)
+    def get_config(self):
+        return {'idct_filters': self.idct_filters}
     def call(self,inputs):
         ydcc_blks,udcc_blks,vdcc_blks = inputs
         ydcc = tf.nn.depth_to_space(ydcc_blks,block_size=8)
@@ -118,6 +122,8 @@ class Linear_JPEG_Compression_Approx(tf.keras.layers.Layer):
         self.jpeg_coef2rgb = JPEG_Coef2RGB(*args,**kwargs)
         self.rgb2jpeg_coef = RGB2JPEG_Coef(*args,**kwargs)
         self.masky,self.masku,self.maskv = get_JPEG_coef_mask(jpegImages,self.rgb2jpeg_coef,epsilon=1e-4)
+    def get_config(self):
+        return {'masky': self.masky,'masku': self.masku, 'maskv': self.maskv}
     def call(self,inputs):
         y_jpeg_coef,u_jpeg_coef,v_jpeg_coef = self.rgb2jpeg_coef(inputs)
         y_jpeg_coef_kept = tf.where(self.masky,y_jpeg_coef,0.)
@@ -162,6 +168,8 @@ class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
         self.ifft = transf.ifft2d_multichannel(fftSz)
         self.fltr1 = self.fft(fltr1)
         self.fltr2 = self.fft(fltr2)
+    def get_config(self):
+        return {'lmbda': self.lmdba}
     def call(self,inputs):
         A = 1.0 + self.lmbda*(tf.math.conj(self.fltr1)*self.fltr1 + tf.math.conj(self.fltr2)*self.fltr2)
         return self.ifft(self.fft(inputs)/A)
@@ -187,6 +195,8 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         self.qUV = qUV
         self.W = W
         self.Wt = Wt
+    def get_config(self):
+        return {'Yoffset': self.Yoffset,'rho': self.rho, 'qY': self.qY, 'qUV': self.qUV}
     def call(self,inputs):
         fx,Axminuss,gamma_over_rho = inputs
         Wx = self.W(fx)
@@ -210,6 +220,8 @@ class QuantizationAdjustment(tf.keras.layers.Layer):
         self.mu = mu
         self.rho = rho
         self.q = q
+    def get_config(self):
+        return {'q': self.q, 'rho': self.rho}
     def call(self,inputs):
         Wx,r = inputs
         r_scaled = self.rho/(self.mu + self.rho)*r
