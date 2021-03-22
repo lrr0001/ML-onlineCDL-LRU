@@ -124,7 +124,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, batch, logs={}):
         self.train_times.append(time.time() - self.epoch_time_start)
-log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S.log")
 tensorboard_callback = tf.keras.callbacks.TensorBoard(
       log_dir = log_dir,
       histogram_freq = 1,

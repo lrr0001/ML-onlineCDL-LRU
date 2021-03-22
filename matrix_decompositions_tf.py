@@ -27,8 +27,9 @@ class dictionary_object2D(ppg.PostProcess):
     def init_dict(self,fltrSz,fftSz,noc,nof,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Drand = tf.random.normal(shape=(1,) + fltrSz + (noc,nof),dtype=tf.dtypes.as_dtype(self.dtype).real_dtype)
-        Dmeaned = Drand - tf.math.reduce_mean(input_tensor=Drand,axis = (1,2),keepdims=True)
-        Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
+        #Dmeaned = Drand - tf.math.reduce_mean(input_tensor=Drand,axis = (1,2),keepdims=True)
+        #Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
+        Dnormalized = noc*Drand/tf.math.sqrt(tf.reduce_sum(input_tensor=Drand**2,axis=(1,2,3),keepdims=True))
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
         #self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
         #self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False) # keras may not like this
@@ -135,8 +136,9 @@ class dictionary_object2D_init(dictionary_object2D):
         
     def init_dict(self,fftSz,D,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
-        Dmeaned = D - tf.math.reduce_mean(input_tensor=D,axis = (1,2),keepdims=True)
-        Dnormalized = D.shape[-2]*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
+        #Dmeaned = D - tf.math.reduce_mean(input_tensor=D,axis = (1,2),keepdims=True)
+        #Dnormalized = D.shape[-2]*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
+        Dnormalized = D.shape[-2]*D/tf.math.sqrt(tf.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
         #self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
         #self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False)
         #return transf.fft2d_inner(fftSz)(self.D)
