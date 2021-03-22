@@ -103,20 +103,23 @@ class MultiLayerCSC(optmz.ADMM):
     def build_updateZ_layer(self,fftSz,nof,rho,mu_init,munext,dictObj,nextdictObj,b_init,cmplxdtype,strides,layer):
         if strides == 2:
             zshapes = self.get_downsampled_z_shape(fftSz,nof)
-            Zupdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            #Zupdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
             mu = Zupdate.mu
-            Z_update_shift = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
-            Z_update_missed_cols = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[1],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            #Z_update_shift = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            Z_update_shift = GetNextIterZFreq_downsampleTossed(rho,self.IFFT[layer + 1],mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            ifft = transf.ifft2d_inner(zshapes[1][1:3])
+            Z_update_missed_cols = GetNextIterZFreq_downsampleTossed(rho,ifft,mu,dictObj,tf.fill(zshapes[1],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
             shift_concat = util.AlternateConcat(shape=zshapes[0][1:],num_of_items=2,axis=1,dtype = cmplxdtype.real_dtype)
             cols_concat = util.AlternateConcat(shape=zshapes[1][1:],num_of_items=2,axis=2,dtype = cmplxdtype.real_dtype)
             #return {'downsampled': Zupdate, 'shifted': Z_update_shift, 'missed_cols': Z_update_missed_cols,'shift_concat': shift_concat,'cols_concat': cols_concat},mu 
             return (Zupdate,Z_update_shift,Z_update_missed_cols,shift_concat,cols_concat),mu
         else:
-            zUpdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_z_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_z_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
             return zUpdate,zUpdate.mu
 
     def build_updateZ_lastlayer(self,fftSz,nof,rho,mu_init,dictObj,b_init, cmplxdtype):
-        lastlayer = GetNextIterZ_lastlayer(rho,mu_init,dictObj,tf.fill(dims = self.get_z_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_z_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
         return lastlayer,lastlayer.mu
 
     def get_output(self,s,y,u,By,negC,itstats):
@@ -343,28 +346,31 @@ class MultiLayerCSC(optmz.ADMM):
         if self.strides[layer] == 2:
             return self.updateZ_downsample(x_nextlayer,Ax_relaxed,gamma_scaled,layer)
         Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
-        z = self.updateZ_layer[layer]((self.IFFT[layer](Dx),self.IFFT[layer](Ax_relaxed),self.IFFT[layer](gamma_scaled)))
+        #z = self.updateZ_layer[layer]((self.IFFT[layer](Dx),self.IFFT[layer](Ax_relaxed),self.IFFT[layer](gamma_scaled)))
+        z = self.updateZ_layer[layer]((Dx,Ax_relaxed,gamma_scaled))
         return self.FFT[layer](z)
     def updateZ_downsample(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
         assert(layer < self.noL - 1)
 
         # downsampled
         Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
-        Ax_relaxed_spatial = self.IFFT[layer](Ax_relaxed)
-        gamma_spatial = self.IFFT[layer](gamma_scaled)
-        Dx_spatial = self.IFFT[layer + 1](Dx)
-        Ax_ds = util.downsample(Ax_relaxed_spatial)
-        gamma_ds = util.downsample(gamma_spatial)
-        z_downsampled = self.updateZ_layer[layer][0]((Dx_spatial,Ax_ds,gamma_ds))
+        #Ax_relaxed_spatial = self.IFFT[layer](Ax_relaxed)
+        #gamma_spatial = self.IFFT[layer](gamma_scaled)
+        #Dx_spatial = self.IFFT[layer + 1](Dx)
+        Ax_plus_gamma_ds = util.freq_downsample(Ax_relaxed + gamma_scaled)
+
+        z_downsampled = self.updateZ_layer[layer][0]((Dx,Ax_plus_gamma_ds))
+        #z_downsampled = self.updateZ_layer[layer][0]((Dx_spatial,Ax_ds,gamma_ds))
         #z_downsampled = self.updateZ_layer[layer]['downsampled']((Dx_spatial,Ax_ds,gamma_ds))
 
         #shift downsampled
         #z_shift_downsampled = self.updateZ_layer[layer]['shifted']((util.shift_downsample(Ax_relaxed_spatial),util.shift_downsample(gamma_spatial)))
-        z_shift_downsampled = self.updateZ_layer[layer][1]((util.shift_downsample(Ax_relaxed_spatial),util.shift_downsample(gamma_spatial)))
+        z_shift_downsampled = self.updateZ_layer[layer][1]((util.freq_shift_downsample(Ax_relaxed + gamma_scaled)))
 
         #z_missed_cols = self.updateZ_layer[layer]['missed_cols']((util.col_downsample(Ax_relaxed_spatial),util.col_downsample(gamma_spatial)))
-        z_missed_cols = self.updateZ_layer[layer][2]((util.col_downsample(Ax_relaxed_spatial),util.col_downsample(gamma_spatial)))
-
+        Ax_plus_gamma = Ax_relaxed + gamma_scaled
+        Ax_plus_gamm_col_shift_ds = util.freq_col_shift_downsample(Ax_relaxed + gamma_scaled)
+        z_missed_cols = self.updateZ_layer[layer][2]((Ax_plus_gamm_col_shift_ds))
 
         # Need to build reconstruction from the three Zs
         #z_downsample_cols = self.updateZ_layer[layer]['shift_concat']((z_downsampled,z_shift_downsampled))
@@ -374,7 +380,7 @@ class MultiLayerCSC(optmz.ADMM):
         return self.FFT[layer](z)
 
     def updateZ_last(self,Ax_relaxed,gamma_scaled):
-        z = self.updateZ_lastlayer((self.IFFT[self.noL - 1](Ax_relaxed),self.IFFT[self.noL - 1](gamma_scaled)))
+        z = self.updateZ_lastlayer((Ax_relaxed,gamma_scaled))
         return self.FFT[self.noL - 1](z)
     def updateGamma(self,gamma_scaled,z,Ax_relaxed,layer):
         if layer < self.noL - 1:
@@ -488,6 +494,36 @@ class GetNextIterZ(tf.keras.layers.Layer):
     def get_config(self):
         return {'rho': self.rho}
 
+class GetNextIterZFreq(tf.keras.layers.Layer):
+    '''
+     inputs: All must be in frequency domain.
+
+       Dx_nextlayer: \mD_{\ell + 1}\vx_{\ell + 1}^{(k + 1)}
+       Ax_relaxed: -\alpha_k\mR_{\ell}^{-1}\vx_{\ell}^{(k + 1)} - (1 - \alpha_k)\mR_{\ell}^{-1}\vz_{\ell}^{(k)}
+       gamma_scaled: \frac{\vgamma_{\ell}^{(k)}}{\rho\sqrt{\mu_{\ell}}
+
+     outputs: unlike inputs, output is in spatial domain
+       z: \vz_{\ell}^{(k + 1)}
+    '''
+    def __init__(self,rho,ifft,mu_init,mu_nextlayer,dictObj,dictObj_nextlayer,b_init,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.rho = rho
+        self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.mu_nextlayer = mu_nextlayer
+        self.dictObj = dictObj
+        self.dictObj_nextlayer = dictObj_nextlayer
+        self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.ifft = ifft
+    def call(self,inputs):
+        # Inputs are in frequency domain, but output is in spatial domain.
+        Dx_nextlayer,Ax_relaxed_plus_gamma_scaled = inputs
+        currR = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
+        leadingFactor = 1/(self.mu_nextlayer + self.rho*self.mu/currR**2)
+        return leadingFactor*self.relu(self.ifft(tf.cast(self.mu_nextlayer,dtype=self.dtype)*Dx_nextlayer - self.dictObj.divide_by_R(tf.cast(self.rho*self.mu,dtype=self.dtype)*(Ax_relaxed_plus_gamma_scaled))) - self.b)
+    def get_config(self):
+        return {'rho': self.rho}
+
 
 class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
     '''
@@ -510,6 +546,28 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
         R = util.rotate_dims_left(self.dictObj.divide_by_R.R)
         return self.relu(-Ax_relaxed - gamma_scaled - R*self.b)
 
+class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer):
+    '''
+      inputs: All must be in frequency domain.
+
+        Ax_relaxed: = -\alpha_k\mR_L^{-1}\vx_L^{(k + 1)} - (1 - \alpha_k)\mR_L^{-1}\vz_L^{(k)}
+        gamma_scaled: \frac{\gamma_L^{(k)}}{\rho\sqrt{\mu_L}}
+
+      outputs: Unlike inputs, output is in spatial domain
+        z_over_R: \mR_L^{-1}\vz_L^{(k + 1)}
+    '''
+    def __init__(self,rho,ifft,mu_init,dictObj,b_init,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.dictObj = dictObj
+        self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype) # Is this an active design decision to avoid dependence on mu?
+        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.ifft = ifft 
+    def call(self,inputs):
+        Ax_relaxed,gamma_scaled = inputs
+        R = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
+        return self.relu(-self.ifft(Ax_relaxed + gamma_scaled) - R*self.b)
+
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def __init__(self,rho,mu,dictObj,b,*args,**kwargs):
         super().__init__(*args,**kwargs)
@@ -522,7 +580,24 @@ class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
         Ax_relaxed,gamma_scaled = inputs
         R = util.rotate_dims_left(self.dictObj.divide_by_R.R)
         return R*self.relu(-Ax_relaxed - gamma_scaled - R*self.b/(self.rho*self.mu))
+    def get_config(self):
+        return {'rho': self.rho}
 
+class GetNextIterZFreq_downsampleTossed(tf.keras.layers.Layer):
+    def __init__(self,rho,ifft,mu,dictObj,b,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.mu = mu
+        self.dictObj = dictObj
+        self.b = b
+        self.rho = rho
+        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.ifft = ifft
+    def call(self,inputs):
+        Ax_relaxed_plus_gamma_scaled = inputs
+        R = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
+        return R*self.relu(self.ifft(Ax_relaxed_plus_gamma_scaled) - R*self.b/(self.rho*self.mu))
+    def get_config(self):
+        return {'rho': self.rho}
 
 class GetNextIterGamma(tf.keras.layers.Layer):
     '''

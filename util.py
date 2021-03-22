@@ -1,4 +1,5 @@
 import tensorflow as tf
+import math
 
 def complexify_dtype(dtype):
     if dtype.is_floating:
@@ -63,7 +64,7 @@ def downsample(input_tensor):
     return tf.strided_slice(input_tensor,begin= [0,0,0],end = [0,0,0],strides=[1,2,2],end_mask=7)
 
 def freq_downsample(input_tensor):
-    # Assumes dimensions in spatial domain are even and that rfft is taken. Still needs to be tested.
+    # This function downsamples in frequency domain for a real 2-d FFT with the FFT axes = 1 and 2. Code assumes the spatial domain has an even number of dimensions on each FFT axis.
     M = input_tensor.shape[1]
     M_over_2 = int(M/2)
     N_over_2 = input_tensor.shape[2] - 1
@@ -89,8 +90,32 @@ def freq_downsample(input_tensor):
     bottomleft += tf.math.conj(tf.strided_slice(input_tensor,begin=[0,M_over_2 - 1,N_over_2],end=[0,0,N_over_2 + 1],strides=[1,-1,1],end_mask=1))
     return tf.concat((tf.concat((topleft,bottomleft),axis=1),tf.concat((topright,bottomright),axis=1)),axis=2)/4.
 
+def freq_shift_downsample(input_tensor):
+    M = input_tensor.shape[1]
+    expFun = tf.math.exp((2j*math.pi/M)*tf.cast(tf.range(0,M,1),dtype=input_tensor.dtype))
+    shifted_tensor = tf.reshape(expFun,shape=(1,M) + (1,)*(len(input_tensor.shape) - 2))*input_tensor
+    return freq_downsample(shifted_tensor)
+
 def shift_downsample(input_tensor):
     return tf.strided_slice(input_tensor,begin= [0,1,0],end = [0,0,0],strides=[1,2,2],end_mask=7)
 
-def col_downsample(input_tensor):
+def col_shift_downsample(input_tensor):
     return tf.strided_slice(input_tensor,begin=[0,0,1],end=[0,0,0],strides=[1,1,2],end_mask=7)
+
+def freq_col_downsample(input_tensor):
+    M = input_tensor.shape[1]
+    N_over_2 = input_tensor.shape[2] - 1
+    if N_over_2 % 2 == 1:
+        N_over_4 = int(input_tensor.shape[2]/2)
+    else:
+        N_over_4 = int(N_over_2/2) + 1
+    output_tensor = tf.strided_slice(input_tensor,begin=[0,0,0],end=[0,M,N_over_4],end_mask=1)
+    output_tensor += tf.math.conj(tf.concat((tf.strided_slice(input_tensor,begin=[0,0,N_over_2],end=[0,1,N_over_2 - N_over_4],strides=[1,1,-1],end_mask=1),tf.strided_slice(input_tensor,begin=[0,M-1,N_over_2],end = [0,0,N_over_2 - N_over_4],strides=[1,-1,-1],end_mask=1)), axis=1))
+    return output_tensor/2
+
+
+def freq_col_shift_downsample(input_tensor):
+    N = 2*(input_tensor.shape[2] - 1)
+    expFun = tf.math.exp((2j*math.pi/N)*tf.cast(tf.range(0,input_tensor.shape[2],1),dtype=input_tensor.dtype))
+    shifted_tensor = tf.reshape(expFun,shape=(1,1,input_tensor.shape[2]) + (1,)*(len(input_tensor.shape) - 3))*input_tensor
+    return freq_col_downsample(shifted_tensor)

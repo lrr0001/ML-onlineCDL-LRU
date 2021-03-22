@@ -129,7 +129,7 @@ class dictionary_object2D_init(dictionary_object2D):
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + '/dmul',**kwargs)
         self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=name + '/qinv',**kwargs)
-        self.get_constrained_D = ifft_trunc_normalize(fltrSz,fftSz,noc,dtype=dtype)
+        self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,fftSz,self.noc,dtype=self.dtype)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
@@ -471,14 +471,14 @@ def randomized_range_finder(A, rangeSize, n_iter,
 
 
 class ifft_trunc_normalize(tf.keras.layers.Layer):
-    def __init__(self,fltrSz,fftSz,noc,Df,*args,**kwargs):
+    def __init__(self,fltrSz,fftSz,noc,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.ifft = transf.ifft2d_inner(fftSz)
         self.fltrSz = fltrSz
         self.noc = noc
     def get_config(self):
         return {'fltrSz': self.fltrSz, 'noc': self.noc}
-    def call(inputs):
+    def call(self,inputs):
         D = self.ifft(inputs)
         Dtrunc = D[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
         return self.noc*Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
