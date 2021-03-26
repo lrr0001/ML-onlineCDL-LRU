@@ -284,7 +284,7 @@ class Relax_SmoothJPEG(tf.keras.layers.Layer): # Since constraint does not depen
         #return None
 
 class ZUpdate_JPEG(tf.keras.layers.Layer):
-    def __init__(self,mu,rho,inv_IplusWtW,qY,qUV,W,Wt,*args,**kwargs):
+    def __init__(self,mu,rho,qY,qUV,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
         qntzn_adjstY = QuantizationAdjustment(mu,rho,qY,dtype=self.dtype)
@@ -303,7 +303,7 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         Wx = self.W(fx)
         r = [Wx[channel] + gamma_over_rho[channel] - negC[channel] for channel in range(len(Wx))]
         Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
-        z = fx - self.rho/(self.mu + self.rho)*self.Wt(r)# + self.Wt(Wdeltaz)
+        z = fx - self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
         #Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
         Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
         #Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
@@ -317,7 +317,7 @@ class GammaUpdate_JPEG(tf.keras.layers.Layer):
         self.alpha = alpha
     def call(self, inputs):
         gamma_over_rho,QWz,negC = inputs
-        return [gamma_over_rho[channel] + alpha*(QWz[channel] - negC[channel]) for channel in range(len(QWz))]
+        return [gamma_over_rho[channel] + self.alpha*(QWz[channel] - negC[channel]) for channel in range(len(QWz))]
 
 class QuantizationAdjustment(tf.keras.layers.Layer):
     def __init__(self,mu,rho,q,*args,**kwargs):

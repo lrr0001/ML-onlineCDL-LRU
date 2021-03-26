@@ -46,17 +46,17 @@ for datatype in ['train/','val/',]:
         loadedImg = loadedImg[slice(0,loadedImgShape[0] - (loadedImgShape[0] % 8)),slice(0,loadedImgShape[1] - (loadedImgShape[1] % 8)),slice(None)]
         if loadedImgShape[0] - (loadedImgShape[0] % 8) == 480 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 320:
            # compressedImg = smooth_jpeg1.Wt(jrf.threeChannelQuantize(smooth_jpeg1.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
-            lowpass,compressedImg,raw = smooth_jpeg1(compressedImg)
+            lowpass,compressedImg,raw = smooth_jpeg1(tf.reshape(loadedImg,(1,) + loadedImg.shape))
         elif loadedImgShape[0] - (loadedImgShape[0] % 8) == 320 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 480:
             #compressedImg = smooth_jpeg2.Wt(jrf.threeChannelQuantize(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
-            lowpass,compressedImg,raw = smooth_jpeg2(compressedImg)
+            lowpass,compressedImg,raw = smooth_jpeg2(tf.reshape(loadedImg,(1,) + loadedImg.shape))
         else:
             raise ValueError('Unexpected Shape!')
 
         # Need to save lowpass, highpass and raw into pickle file
         fid = open(savePath + datatype + filename + '.pckl','wb')
 
-        pkl.dump({'lowpass': tf.reshape(lowpass,lowpass.shape[1:]),'highpass': tf.reshape(compressedImg - lowpass,lowpass.shape[1:]), 'raw': raw},fid)
+        pkl.dump({'lowpass': tf.reshape(lowpass,lowpass.shape[1:]),'highpass': tf.reshape(compressedImg - lowpass,lowpass.shape[1:]), 'raw': tf.reshape(raw,raw.shape[1:])},fid)
         fid.close()
 
 
