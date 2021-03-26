@@ -50,7 +50,7 @@ class Smooth_JPEG(optmz.ADMM):
         return self.uupdate((u,By,negC))
 
     # Before and After:
-    def preprocessing(s)
+    def preprocessing(s):
         rgb2yuv = RGB2YUV(dtype=self.dtype)
         return rgb2yuv(s)
     def get_output(self,s,y,u,By,negC,itstats):
