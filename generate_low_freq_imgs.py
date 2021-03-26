@@ -45,19 +45,19 @@ for datatype in ['train/','val/',]:
         # crop out a row and a column
         loadedImg = loadedImg[slice(0,loadedImgShape[0] - (loadedImgShape[0] % 8)),slice(0,loadedImgShape[1] - (loadedImgShape[1] % 8)),slice(None)]
         if loadedImgShape[0] - (loadedImgShape[0] % 8) == 480 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 320:
-            compressedImg = smooth_jpeg1.Wt(jrf.threeChannelQuantize(smooth_jpeg1.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
-            lowpass,negC = smooth_jpeg1(compressedImg)
+           # compressedImg = smooth_jpeg1.Wt(jrf.threeChannelQuantize(smooth_jpeg1.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
+            lowpass,compressedImg,raw = smooth_jpeg1(compressedImg)
         elif loadedImgShape[0] - (loadedImgShape[0] % 8) == 320 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 480:
-            compressedImg = smooth_jpeg2.Wt(jrf.threeChannelQuantize(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
-            lowpass,negC = smooth_jpeg2(compressedImg)
+            #compressedImg = smooth_jpeg2.Wt(jrf.threeChannelQuantize(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
+            lowpass,compressedImg,raw = smooth_jpeg2(compressedImg)
         else:
             raise ValueError('Unexpected Shape!')
 
         # Need to save lowpass, highpass and raw into pickle file
         fid = open(savePath + datatype + filename + '.pckl','wb')
 
-        pkl.dump({'lowpass': tf.reshape(lowpass,lowpass.shape[1:]),'highpass': tf.reshape(compressedImg - lowpass,lowpass.shape[1:]), 'raw': loadedImg},fid)
-        fid.close()    
+        pkl.dump({'lowpass': tf.reshape(lowpass,lowpass.shape[1:]),'highpass': tf.reshape(compressedImg - lowpass,lowpass.shape[1:]), 'raw': raw},fid)
+        fid.close()
 
 
 fid = open('data/processed/simpleTest/param.pckl','wb')

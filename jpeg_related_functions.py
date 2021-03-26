@@ -5,7 +5,8 @@ import transforms as transf
 import optmz
 
 class Smooth_JPEG(optmz.ADMM):
-    # This layer computes a smoothed version of a JPEG-compressed image.
+    ''' This layer computes a smoothed version of a JPEG-compressed image. Input is an uncompressed RGB image.
+        Output is a smoothed version of the image in YUV domain, a JPEG-compressed YUV image, and an uncompressed YUV image.''' 
     def __init__(self,rho,alpha,noi,qY,qUV,lmbda,fftSz,*args,**kwargs):
         self.qY = tf.reshape(qY,(1,1,1,64))
         self.qUV = tf.reshape(qUV,(1,1,1,64))
@@ -15,12 +16,12 @@ class Smooth_JPEG(optmz.ADMM):
         super().__init__(rho,alpha,noi,*args,**kwargs)
         self.init_fun()
     def init_fun(self):
-        self.W = RGB2JPEG_Coef(dtype=self.dtype)
-        self.Wt = JPEG_Coef2RGB(dtype=self.dtype)
+        self.W = YUV2JPEG_Coef(dtype=self.dtype)
+        self.Wt = JPEG_Coef2YUV(dtype=self.dtype)
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
-        self.relaxlayer = Relax_SmoothJPEG(self.alpha,dtype=self.dtype)
-        self.yupdate = ZUpdate_JPEG(1.0,self.rho,Inv_muIpluspBtB(1.0,self.rho,dtype=self.dtype),self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
-        self.uupdate = GammaUpdate_JPEG(dtype=self.dtype)
+        #self.relaxlayer = Relax_SmoothJPEG(dtype=self.dtype) # move alpha to uupdate
+        self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
+        self.uupdate = GammaUpdate_JPEG(self.alpha,dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
     def init_x(self,s,negC):
@@ -41,16 +42,24 @@ class Smooth_JPEG(optmz.ADMM):
     def xstep(self,y,u,By,negC):
         return (self.xupdate(y),0.)
     def relax(self,Ax,By,negC):
-        return self.relaxlayer((negC,By))
+        #return self.relaxlayer((negC,By))
+        return (None,)
     def ystep(self,x,u,Ax_relaxed,negC):
-        return self.yupdate((x,Ax_relaxed,u))
-    def ustep(self,u,Ax_relaxed,By,negC):
-        return self.uupdate((u,Ax_relaxed,By))
+        return self.yupdate((x,u,negC))
+    def ustep(self,u,By,negC):
+        return self.uupdate((u,By,negC))
 
     # Before and After:
+    def preprocessing(s)
+        rgb2yuv = RGB2YUV(dtype=self.dtype)
+        return rgb2yuv(s)
     def get_output(self,s,y,u,By,negC,itstats):
+        ''' Outputs:
+               Smoothed image (YUV)
+               Compressed image (YUV)
+               Raw image (YUV)'''
         x,Ax = self.xstep(y,u,By,negC)
-        return (x,negC)
+        return (x,self.Wt(negC),s)
 
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
@@ -163,6 +172,16 @@ class RGB2JPEG_Coef_Transpose(JPEG_Coef2Color):
         super().__init__(*args,**kwargs)
         self.colortransform = RGB2YUV_Transpose(dtype=self.dtype)
 
+class YUV2JPEG_Coef(Color2JPEG_Coef):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.colortransform = tf.identity
+
+class JPEG_Coef2YUV(JPEG_Coef2Color):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.colortransform = tf.identity
+
 def get_JPEG_coef_mask(jpegImages,rgb2jpeg_coef_layer,epsilon):
     ydcc_blks,udcc_blks,vdcc_blks = rgb2jpeg_coef_layer(jpegImages)
     nonzero = lambda x: tf.math.greater(tf.math.abs(x),epsilon)
@@ -217,6 +236,8 @@ class Inv_muIpluspBtB(ColorTransform):
         super().__init__(*args,**kwargs)
         rgb2yuv = tf.convert_to_tensor(_rgb_to_yuv_mat,dtype=self.dtype)
         self.transf_mat = tf.linalg.inv(mu*tf.eye(3) + rho*tf.linalg.matmul(transpose(rgb2yuv),rgb2yuv))
+        # This idea was never fully realized. Full implementation would likely require Cholesky factorization and a Woodbury identity trick.
+        raise NotImplementedError
 
 class INV_muIpluspBtB(tf.keras.layers.Layer):
     def __init__(self,rho,mu,*args,**kwargs):
@@ -226,6 +247,8 @@ class INV_muIpluspBtB(tf.keras.layers.Layer):
         self.W = tf.convert_to_tensor(_rgb_to_yuv_mat,dtype=self.dtype)
         inv = tf.linalg.inv(self.rho*tf.eye(3,dtype=self.dtype) + self.mu*tf.linalg.matmul(tf.transpose(self.W),self.W))
         self.transf_mat = tf.Variable(initial_value=inv,trainable=False,dtype= self.dtype)
+        # This idea was never fully realized. Full implementation would likely require Cholesky factorization and a Woodbury identity trick.
+        raise NotImplementedError
     def _update_fun(self):
         self.transf_mat.assign(tf.linalg.inv(self.rho*tf.eye(3) + self.mu*tf.linalg.matmul(tf.transpose(self.W),self.W)))
     def call(self, inputs):
@@ -249,13 +272,16 @@ class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
         A = 1.0 + self.lmbda*(tf.math.conj(self.fltr1)*self.fltr1 + tf.math.conj(self.fltr2)*self.fltr2)
         return self.ifft(self.fft(inputs)/A)
 
-class Relax_SmoothJPEG(tf.keras.layers.Layer):
+class Relax_SmoothJPEG(tf.keras.layers.Layer): # Since constraint does not depend on x, can just use stepsize alpha.
     def __init__(self,alpha,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.alpha = alpha
+        print('Relax_SmoothJPEG is outdated code, and incompatible with other jpeg-related functions.')
     def call(self,inputs):
         QWs,QWz = inputs
+        print('Relax_SmoothJPEG is outdated code, and incompatible with other jpeg-related functions.')
         return [-(1.0 - self.alpha)*QWz[channel] - self.alpha*QWs[channel] for channel in range(len(QWs))]
+        #return None
 
 class ZUpdate_JPEG(tf.keras.layers.Layer):
     def __init__(self,mu,rho,inv_IplusWtW,qY,qUV,W,Wt,*args,**kwargs):
@@ -270,28 +296,28 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         self.qUV = qUV
         self.W = W
         self.Wt = Wt
-        self.inv_IplusWtW = inv_IplusWtW
     def get_config(self):
         return {'Yoffset': self.Yoffset,'rho': self.rho, 'qY': self.qY, 'qUV': self.qUV}
     def call(self,inputs):
-        fx,Axminuss,gamma_over_rho = inputs
-        AxplusCplusU = [Axminuss[channel] + gamma_over_rho[channel] for channel in range(len(Axminuss))]
-        #Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
-        WtAxplusCplusU = self.Wt(AxplusCplusU)
-        z = self.inv_IplusWtW(self.mu*fx - self.rho/(self.mu + self.rho)*WtAxplusCplusU)# + self.Wt(Wdeltaz)
-        Wz = self.W(z)
-        #Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
+        fx,gamma_over_rho,negC = inputs
+        Wx = self.W(fx)
+        r = [Wx[channel] + gamma_over_rho[channel] - negC[channel] for channel in range(len(Wx))]
+        Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
+        z = fx - self.rho/(self.mu + self.rho)*self.Wt(r)# + self.Wt(Wdeltaz)
+        #Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
+        Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
         #Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
         QWz = threeChannelQuantize(Wz,self.qY,self.qUV,self.Yoffset)
         #QWz = Wz
         return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):
-    def __init__(self,*args,**kwargs):
+    def __init__(self,alpha,*args,**kwargs):
         super().__init__(*args,**kwargs)
+        self.alpha = alpha
     def call(self, inputs):
-        gamma_over_rho,Axminuss,QWz = inputs
-        return [gamma_over_rho[channel] + Axminuss[channel] + QWz[channel] for channel in range(len(QWz))]
+        gamma_over_rho,QWz,negC = inputs
+        return [gamma_over_rho[channel] + alpha*(QWz[channel] - negC[channel]) for channel in range(len(QWz))]
 
 class QuantizationAdjustment(tf.keras.layers.Layer):
     def __init__(self,mu,rho,q,*args,**kwargs):
@@ -303,7 +329,7 @@ class QuantizationAdjustment(tf.keras.layers.Layer):
         return {'q': self.q, 'rho': self.rho}
     def call(self,inputs):
         Wx,r = inputs
-        r_scaled = self.rho/(self.mu + self.rho)*r
+        r_scaled = -self.rho/(self.mu + self.rho)*r
         y = Wx + r_scaled
         firstTerm = lambda Wdeltaz: self.mu/2*tf.math.square(r_scaled + Wdeltaz)
         secondTerm = lambda Wdeltaz: self.rho/2*tf.math.square(-self.mu/(self.mu + self.rho) + self.q*tf.math.round((y + Wdeltaz)/self.q) - y)

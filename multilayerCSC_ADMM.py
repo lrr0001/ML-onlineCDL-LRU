@@ -78,15 +78,15 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
             #self.updateZ_layer[ii] = zupdate
             reversed_updateZ_layer.append(zupdate)
         
-        inv_muIpluspBtB = jrf.INV_muIpluspBtB(mu,self.rho,dtype=cmplxdtype.real_dtype)
-        ppg.PostProcess.add_update(mu.name,inv_muIpluspBtB._update_fun)
+        inv_muIpluspBtB = jrf.INV_muIpluspBtB(mu,self.rho,dtype=cmplxdtype.real_dtype) # no longer necessary
+        ppg.PostProcess.add_update(mu.name,inv_muIpluspBtB._update_fun) # no longer necessary
         self.updateZ_layer = []
         for ii in range(noL - 1): # Last shall be first and first shall be last.
             self.updateZ_layer.append(reversed_updateZ_layer[noL - 2 - ii])
-        self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
-        self.Wt = jrf.RGB2JPEG_Coef_Transpose(dtype=cmplxdtype.real_dtype)
+        self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype) # need to change this to YUV
+        self.Wt = jrf.RGB2JPEG_Coef_Transpose(dtype=cmplxdtype.real_dtype) # need to change this to YUV
         self.updatev = jrf.ZUpdate_JPEG(mu,rho,inv_muIpluspBtB,qY,qUV,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
-        self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, dtype=cmplxdtype.real_dtype)
+        self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, dtype=cmplxdtype.real_dtype) # could change these 2 so that eta update gets alpha
         self.updateeta = jrf.GammaUpdate_JPEG(dtype=cmplxdtype.real_dtype)
         self.qY = qY
         self.qUV = qUV
