@@ -2,17 +2,17 @@ import tensorflow as tf
 import pickle as pkl
 import numpy as np
 
-nof = [32,64]
+nof = [32]
 noc = 3
-stride = [2]
-fltrSz = ((5,5),(7,7))
+stride = []
+fltrSz = ((5,5),)
 noL = len(fltrSz)
-noi = 48 # 96
+noi =  200
 
 D = []
-#D_first = np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64')
-#D.append(D_first - tf.math.reduce_mean(input_tensor=D_first,axis = (1,2),keepdims=True))
-D.append(np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64')
+D_first = np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64')
+D.append(D_first - tf.math.reduce_mean(input_tensor=D_first,axis = (1,2),keepdims=True))
+#D.append(np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64'))
 for layer in range(1,noL):
     D.append(np.random.randn(1,fltrSz[layer][0],fltrSz[layer][1],nof[layer - 1],nof[layer]).astype('float64'))
 

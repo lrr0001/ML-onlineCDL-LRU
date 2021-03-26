@@ -19,7 +19,7 @@ class Smooth_JPEG(optmz.ADMM):
         self.Wt = JPEG_Coef2RGB(dtype=self.dtype)
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
         self.relaxlayer = Relax_SmoothJPEG(self.alpha,dtype=self.dtype)
-        self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
+        self.yupdate = ZUpdate_JPEG(1.0,self.rho,Inv_muIpluspBtB(1.0,self.rho,dtype=self.dtype),self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
         self.uupdate = GammaUpdate_JPEG(dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
@@ -67,7 +67,44 @@ def generate_dct2D_filters():
 def generate_idct2D_filters():
     return tf.reshape(tf.transpose(generate_dct2D_filters(),perm=(3,0,1,2)),(8,8,1,64))
 
-class RGB2JPEG_Coef(tf.keras.layers.Layer):
+_rgb_to_yuv_mat = [[0.299,0.587,0.114],
+                  [-0.14714119,-0.28886916,0.43601035],
+                  [0.61497538, -0.51496512,-0.10001026]]
+
+_yuv_to_rgb_mat = [[1.,0.,1.13988303],
+                  [1.,-0.394642334, -0.58062185],
+                  [1.,2.03206185,0.]]
+
+class ColorTransform(tf.keras.layers.Layer):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+    def call(self, inputs):
+        transf_mat = tf.reshape(self.transf_mat,shape=tf.concat((tf.ones(tf.rank(inputs) - 1,dtype=tf.as_dtype('int32')),[3,3]),axis=0))
+        return tf.linalg.matvec(transf_mat,inputs)
+    def get_config(self):
+        return {'Transform_Matrix': self.transf_mat}
+
+class RGB2YUV(ColorTransform):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.transf_mat = tf.convert_to_tensor(_rgb_to_yuv_mat,dtype=self.dtype)
+
+class YUV2RGB(ColorTransform):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.transf_mat = tf.convert_to_tensor(_yuv_to_rgb_mat,dtype=self.dtype)
+
+class RGB2YUV_Transpose(ColorTransform):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.transf_mat = tf.transpose(tf.convert_to_tensor(_rgb_to_yuv_mat,dtype=self.dtype))
+
+class YUV2RGB_Transpose(ColorTransform):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.transf_mat = tf.transpose(tf.convert_to_tensor(_yuv_to_rgb_mat,dtype=self.dtype))
+
+class Color2JPEG_Coef(tf.keras.layers.Layer):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.dct_filters = tf.cast(generate_dct2D_filters(),dtype=self.dtype)
@@ -75,7 +112,7 @@ class RGB2JPEG_Coef(tf.keras.layers.Layer):
     def get_config(self):
         return {'dct_filters': self.dct_filters}
     def call(self,inputs):
-        yuv = tf.image.rgb_to_yuv(inputs)
+        yuv = self.colortransform(inputs)
         y,u,v = tf.split(yuv,axis=3,num_or_size_splits=3)
         u_ds = self.downsample(u)
         v_ds = self.downsample(v)
@@ -84,7 +121,7 @@ class RGB2JPEG_Coef(tf.keras.layers.Layer):
         vdcc_blks = tf.nn.conv2d(v_ds,self.dct_filters,strides=8,padding='VALID')
         return (ydcc_blks,udcc_blks,vdcc_blks) # discrete cosine coefficients
 
-class JPEG_Coef2RGB(tf.keras.layers.Layer):
+class JPEG_Coef2Color(tf.keras.layers.Layer):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.idct_filters = tf.cast(generate_idct2D_filters(),dtype=self.dtype)
@@ -109,8 +146,23 @@ class JPEG_Coef2RGB(tf.keras.layers.Layer):
         v = self.Upsample(v_ds)
         yuv = tf.concat((y,u,v),axis=3)
         #return tf.clip_by_value(tf.image.yuv_to_rgb(yuv),0.,1.)
-        return tf.image.yuv_to_rgb(yuv)
-        
+        return self.colortransform(yuv)
+
+class RGB2JPEG_Coef(Color2JPEG_Coef):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.colortransform = RGB2YUV(dtype=self.dtype)
+
+class JPEG_Coef2RGB(JPEG_Coef2Color):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.colortransform = YUV2RGB(dtype=self.dtype)
+
+class RGB2JPEG_Coef_Transpose(JPEG_Coef2Color):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.colortransform = RGB2YUV_Transpose(dtype=self.dtype)
+
 def get_JPEG_coef_mask(jpegImages,rgb2jpeg_coef_layer,epsilon):
     ydcc_blks,udcc_blks,vdcc_blks = rgb2jpeg_coef_layer(jpegImages)
     nonzero = lambda x: tf.math.greater(tf.math.abs(x),epsilon)
@@ -160,6 +212,29 @@ def quantize(w,q,offset=None):
 def threeChannelQuantize(w,qY,qUV,Yoffset):
     return [quantize(w[ii],q,offset) for (ii,q,offset) in zip(range(3),(qY,qUV,qUV),(Yoffset,None,None))]
 
+class Inv_muIpluspBtB(ColorTransform):
+    def __init__(self,rho,mu,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        rgb2yuv = tf.convert_to_tensor(_rgb_to_yuv_mat,dtype=self.dtype)
+        self.transf_mat = tf.linalg.inv(mu*tf.eye(3) + rho*tf.linalg.matmul(transpose(rgb2yuv),rgb2yuv))
+
+class INV_muIpluspBtB(tf.keras.layers.Layer):
+    def __init__(self,rho,mu,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.rho = rho
+        self.mu = mu
+        self.W = tf.convert_to_tensor(_rgb_to_yuv_mat,dtype=self.dtype)
+        inv = tf.linalg.inv(self.rho*tf.eye(3,dtype=self.dtype) + self.mu*tf.linalg.matmul(tf.transpose(self.W),self.W))
+        self.transf_mat = tf.Variable(initial_value=inv,trainable=False,dtype= self.dtype)
+    def _update_fun(self):
+        self.transf_mat.assign(tf.linalg.inv(self.rho*tf.eye(3) + self.mu*tf.linalg.matmul(tf.transpose(self.W),self.W)))
+    def call(self, inputs):
+        transf_mat = tf.reshape(self.transf_mat,shape=tf.concat((tf.ones(tf.rank(inputs) - 1,dtype=tf.as_dtype('int32')),[3,3]),axis=0))
+        return tf.linalg.matvec(transf_mat,inputs)
+    def get_config(self):
+        return{'rho': self.rho, 'rgb2yuv_mat': self.W}
+
+
 class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
     def __init__(self,lmbda,fftSz,fltr1,fltr2,*args,**kwargs):
         super().__init__(*args,**kwargs)
@@ -183,7 +258,7 @@ class Relax_SmoothJPEG(tf.keras.layers.Layer):
         return [-(1.0 - self.alpha)*QWz[channel] - self.alpha*QWs[channel] for channel in range(len(QWs))]
 
 class ZUpdate_JPEG(tf.keras.layers.Layer):
-    def __init__(self,mu,rho,qY,qUV,W,Wt,*args,**kwargs):
+    def __init__(self,mu,rho,inv_IplusWtW,qY,qUV,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
         qntzn_adjstY = QuantizationAdjustment(mu,rho,qY,dtype=self.dtype)
@@ -195,16 +270,20 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         self.qUV = qUV
         self.W = W
         self.Wt = Wt
+        self.inv_IplusWtW = inv_IplusWtW
     def get_config(self):
         return {'Yoffset': self.Yoffset,'rho': self.rho, 'qY': self.qY, 'qUV': self.qUV}
     def call(self,inputs):
         fx,Axminuss,gamma_over_rho = inputs
-        Wx = self.W(fx)
-        r = [-Axminuss[channel] - Wx[channel] - gamma_over_rho[channel] for channel in range(len(Wx))]
-        Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
-        z = fx + self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
-        Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
+        AxplusCplusU = [Axminuss[channel] + gamma_over_rho[channel] for channel in range(len(Axminuss))]
+        #Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
+        WtAxplusCplusU = self.Wt(AxplusCplusU)
+        z = self.inv_IplusWtW(self.mu*fx - self.rho/(self.mu + self.rho)*WtAxplusCplusU)# + self.Wt(Wdeltaz)
+        Wz = self.W(z)
+        #Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
+        #Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
         QWz = threeChannelQuantize(Wz,self.qY,self.qUV,self.Yoffset)
+        #QWz = Wz
         return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):

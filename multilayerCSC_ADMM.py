@@ -5,8 +5,9 @@ import jpeg_related_functions as jrf
 import transforms as transf
 import util
 import numpy as np
+import post_process_grad as ppg
 
-class MultiLayerCSC(optmz.ADMM):
+class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
     '''
     x: list
        x[\ell] = \mR_{\ell}^{-1}\vx_{\ell}
@@ -37,7 +38,7 @@ class MultiLayerCSC(optmz.ADMM):
         rho = tf.cast(rho,dtype = cmplxdtype.real_dtype)
         mu_init = tf.cast(mu_init,dtype=cmplxdtype.real_dtype)
         self.noL = noL
-        super().__init__(rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
+        optmz.ADMM.__init__(self=self,rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
         self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,dtype=dtype)
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
@@ -68,21 +69,28 @@ class MultiLayerCSC(optmz.ADMM):
         reversed_updateZ_layer = []
         #self.updateZ_layer = [[],]*(noL - 1)
         self.updateGamma_layer = GetNextIterGamma(dtype=cmplxdtype)
+
         self.updateZ_lastlayer,mu = self.build_updateZ_lastlayer(fftSz[noL - 1],D[noL - 1].shape[-1],rho,mu_init,self.dictObj[noL - 1],b_init,cmplxdtype)
+        if noL == 1:
+            pass
         for ii in range(noL - 2,-1,-1): # appending backwards because need the mu value, and tensorflow doesn't like when I initialize the entire list.  I'll flip it later so the indices make sense.
             zupdate,mu = self.build_updateZ_layer(fftSz[ii],D[ii].shape[-1],rho,mu_init,mu,self.dictObj[ii],self.dictObj[ii + 1],b_init,cmplxdtype,strides[ii],ii)
             #self.updateZ_layer[ii] = zupdate
             reversed_updateZ_layer.append(zupdate)
+        
+        inv_muIpluspBtB = jrf.INV_muIpluspBtB(mu,self.rho,dtype=cmplxdtype.real_dtype)
+        ppg.PostProcess.add_update(mu.name,inv_muIpluspBtB._update_fun)
         self.updateZ_layer = []
         for ii in range(noL - 1): # Last shall be first and first shall be last.
             self.updateZ_layer.append(reversed_updateZ_layer[noL - 2 - ii])
         self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
-        Wt = jrf.JPEG_Coef2RGB(dtype=cmplxdtype.real_dtype)
-        self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,self.W,Wt,dtype = cmplxdtype.real_dtype)
+        self.Wt = jrf.RGB2JPEG_Coef_Transpose(dtype=cmplxdtype.real_dtype)
+        self.updatev = jrf.ZUpdate_JPEG(mu,rho,inv_muIpluspBtB,qY,qUV,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
         self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, dtype=cmplxdtype.real_dtype)
         self.updateeta = jrf.GammaUpdate_JPEG(dtype=cmplxdtype.real_dtype)
         self.qY = qY
         self.qUV = qUV
+        
 
     def build_fft_layers(self,fftSz,noL):
         FFT = []
@@ -104,7 +112,7 @@ class MultiLayerCSC(optmz.ADMM):
         if strides == 2:
             zshapes = self.get_downsampled_z_shape(fftSz,nof)
             #Zupdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
-            Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),name = self.name + '/zLayer' + str(layer),dtype=cmplxdtype)
             mu = Zupdate.mu
             #Z_update_shift = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
             Z_update_shift = GetNextIterZFreq_downsampleTossed(rho,self.IFFT[layer + 1],mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
@@ -115,18 +123,21 @@ class MultiLayerCSC(optmz.ADMM):
             #return {'downsampled': Zupdate, 'shifted': Z_update_shift, 'missed_cols': Z_update_missed_cols,'shift_concat': shift_concat,'cols_concat': cols_concat},mu 
             return (Zupdate,Z_update_shift,Z_update_missed_cols,shift_concat,cols_concat),mu
         else:
-            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_z_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_z_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),name = self.name + '/zLayer' + str(layer),dtype=cmplxdtype)
             return zUpdate,zUpdate.mu
 
     def build_updateZ_lastlayer(self,fftSz,nof,rho,mu_init,dictObj,b_init, cmplxdtype):
-        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_z_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
+        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_z_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),name = self.name + '/last_zLayer',dtype=cmplxdtype)
         return lastlayer,lastlayer.mu
 
     def get_output(self,s,y,u,By,negC,itstats):
         x,Ax = self.xstep(y,u,By,negC)
+        Ax_relaxed = self.relax(Ax,By,negC)
+        y,By = self.ystep(x,u,Ax_relaxed,negC)
+        v,z = y
         s_LF,QWs = negC
-        Dx0 = self.IFFT[0](self.dictObj[0].dmul(x[0]))
-        return (self.cropAndMerge.crop(tf.squeeze(Dx0,axis=-1)) + s_LF,itstats)
+        v = self.IFFT[0](v)
+        return (self.cropAndMerge.crop(tf.squeeze(v,axis=-1)) + s_LF,itstats)
 
     def get_z_shape(self,fftSz,M):
         return [1,fftSz[0],fftSz[1],M,1,]
@@ -229,15 +240,18 @@ class MultiLayerCSC(optmz.ADMM):
         return recErr + penaltyErr + cnstrErr
     def reconstructionErrors(self,x,y):
         v,z = y
-        if strides[0] == 2:
-            mu = self.updateZ_layer[0][0].mu
+        if self.noL > 1:
+            if strides[0] == 2:
+                mu = self.updateZ_layer[0][0].mu
             #mu = self.updateZ_layer[0]['downsampled'].mu
+            else:
+                mu = self.updateZ_layer[0].mu
         else:
-            mu = self.updateZ_layer[0].mu
+            mu = self.updateZ_lastlayer.mu
         reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul(x[0]))/self.FFT_factor[0]
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
-                if strides[layer] == 2:
+                if self.strides[layer] == 2:
                     mu = self.updateZ_layer[layer][0].mu
                     #mu = self.updateZ_layer[layer]['downsampled'].mu
                 else:
@@ -407,11 +421,15 @@ class MultiLayerCSC(optmz.ADMM):
         else:
             return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.math.maximum(z,0.)))/self.rho/self.updateZ_lastlayer.mu
     def jpegConstraint(self,eta_over_rho,QWz,QWs):
-        aug_cnstrnt_term = [QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))]
-        return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(QWs))])
+        #aug_cnstrnt_term = [QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))]
+        #return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(QWs))])
+        aug_cnstrnt_term = self.Wt([QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))])
+        return self.rho/2*tf.math.reduce_sum(aug_cnstrnt_term*tf.math.conj(aug_cnstrnt_term))
     def jpegConstraint_relaxed(self,eta_over_rho,Azero,Bv):
-        aug_cnstrnt_term = [Azero[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))]
-        return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(Bv))])
+        #aug_cnstrnt_term = [Azero[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))]
+        #return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(Bv))])
+        aug_cnstrnt_term = self.Wt([Azero[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))])
+        return self.rho/2*tf.math.reduce_sum(aug_cnstrnt_term*tf.math.conj(aug_cnstrnt_term))
     def zxConstraint(self,gamma_over_rho,x_over_R,z_over_R):
         rho = util.complexNum(self.rho)
         sum_of_terms = z_over_R - x_over_R + gamma_over_rho
@@ -508,7 +526,9 @@ class GetNextIterZFreq(tf.keras.layers.Layer):
     def __init__(self,rho,ifft,mu_init,mu_nextlayer,dictObj,dictObj_nextlayer,b_init,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.rho = rho
-        self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        with tf.name_scope(self.name):
+            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.mu_varname = self.mu.name
         self.mu_nextlayer = mu_nextlayer
         self.dictObj = dictObj
         self.dictObj_nextlayer = dictObj_nextlayer
@@ -522,7 +542,7 @@ class GetNextIterZFreq(tf.keras.layers.Layer):
         leadingFactor = 1/(self.mu_nextlayer + self.rho*self.mu/currR**2)
         return leadingFactor*self.relu(self.ifft(tf.cast(self.mu_nextlayer,dtype=self.dtype)*Dx_nextlayer - self.dictObj.divide_by_R(tf.cast(self.rho*self.mu,dtype=self.dtype)*(Ax_relaxed_plus_gamma_scaled))) - self.b)
     def get_config(self):
-        return {'rho': self.rho}
+        return {'rho': self.rho,'mu_varname': self.mu_varname}
 
 
 class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
@@ -558,7 +578,9 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer):
     '''
     def __init__(self,rho,ifft,mu_init,dictObj,b_init,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        with tf.name_scope(self.name):
+            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.mu_varname = self.mu.name
         self.dictObj = dictObj
         self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype) # Is this an active design decision to avoid dependence on mu?
         self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
@@ -567,6 +589,8 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer):
         Ax_relaxed,gamma_scaled = inputs
         R = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
         return self.relu(-self.ifft(Ax_relaxed + gamma_scaled) - R*self.b)
+    def get_config(self):
+        return {'mu_varname': self.mu_varname}
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def __init__(self,rho,mu,dictObj,b,*args,**kwargs):
