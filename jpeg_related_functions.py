@@ -288,7 +288,8 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         self.Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
         qntzn_adjstY = QuantizationAdjustment(mu,rho,qY,dtype=self.dtype)
-        qntzn_adjstUV = QuantizationAdjustment(mu,rho,qUV,dtype=self.dtype)
+        # Factor of 16 comes from downsampling.
+        qntzn_adjstUV = QuantizationAdjustment(mu,rho/16.,qUV,dtype=self.dtype)
         self.qntzn_adjst = [qntzn_adjstY,qntzn_adjstUV,qntzn_adjstUV]
         self.rho = rho
         self.mu = mu
@@ -302,10 +303,11 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         fx,gamma_over_rho,negC = inputs
         Wx = self.W(fx)
         r = [Wx[channel] + gamma_over_rho[channel] - negC[channel] for channel in range(len(Wx))]
+        r_factor = [(self.rho/ds_factor)/(self.mu + self.rho/ds_factor) for ds_factor in (1.,16.,16.)]
         Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
-        z = fx - self.rho/(self.mu + self.rho)*self.Wt(r) + self.Wt(Wdeltaz)
+        z = fx - self.Wt([r[channel]*r_factor[channel] for channel in range(len(Wx))]) + self.Wt(Wdeltaz)
         #Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
-        Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
+        Wz = [Wx[channel] - r_factor[channel]*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]
         #Wz = [Wx[channel] + self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
         QWz = threeChannelQuantize(Wz,self.qY,self.qUV,self.Yoffset)
         #QWz = Wz
@@ -329,22 +331,22 @@ class QuantizationAdjustment(tf.keras.layers.Layer):
         return {'q': self.q, 'rho': self.rho}
     def call(self,inputs):
         Wx,r = inputs
-        r_scaled = -self.rho/(self.mu + self.rho)*r
-        y = Wx + r_scaled
-        firstTerm = lambda Wdeltaz: self.mu/2*tf.math.square(r_scaled + Wdeltaz)
-        secondTerm = lambda Wdeltaz: self.rho/2*tf.math.square(-self.mu/(self.mu + self.rho) + self.q*tf.math.round((y + Wdeltaz)/self.q) - y)
+        #r_scaled = -self.rho/(self.mu + self.rho)*r
+        y = Wx - self.rho/(self.mu + self.rho)*r
+        firstTerm = lambda Wdeltaz: self.mu/2*tf.math.square(Wdeltaz - self.rho/(self.mu + self.rho)*r)
+        secondTerm = lambda Wdelta: self.rho/2*tf.math.square(self.mu/(self.mu + self.rho)*r + quantize(y + Wdelta,self.q) - y)
         dctelemerror = lambda Wdeltaz:  firstTerm(Wdeltaz) + secondTerm(Wdeltaz)
 
-        firstterm_min = -r_scaled
-        secondterm_static = quantize(y,self.q) - y - tf.math.sign(r)*self.q*halfqminus(self.q)
-        secondterm_move = quantize(y,self.q) - y - tf.math.sign(r)*self.q*(1. + halfqminus(self.q))
+        firstterm_min = self.rho/(self.mu + self.rho)*r
+        secondterm_static = quantize(y,self.q) - y + tf.math.sign(r)*halfqminus(self.q)
+        secondterm_move = quantize(y,self.q) - y + tf.math.sign(r)*(self.q + halfqminus(self.q))
 
         # minimize first term, provided second term unchanged
-        candidate1 = -tf.math.sign(r)*tf.math.minimum(tf.math.abs(firstterm_min),tf.math.abs(secondterm_static))
+        candidate1 = tf.math.sign(r)*tf.math.minimum(tf.math.abs(firstterm_min),tf.math.abs(secondterm_static))
         # reduce second term, change first term as little as possible
-        candidate2 = quantize(y,self.q) - halfqplus(self.q)*self.q*tf.math.sign(y - quantize(y,self.q) + firstterm_min) - y
+        candidate2 = quantize(y,self.q) - halfqplus(self.q)*tf.math.sign(y - quantize(y,self.q) + firstterm_min) - y
         # change both terms
-        candidate3 = -tf.math.sign(r)*tf.math.minimum(tf.math.abs(firstterm_min),tf.math.abs(secondterm_move))
+        candidate3 = tf.math.sign(r)*tf.math.minimum(tf.math.abs(firstterm_min),tf.math.abs(secondterm_move))
 
         # compare the results of 3 candidates and choose the best one.
         bestcandidate = tf.where(dctelemerror(candidate2) < dctelemerror(candidate1),candidate2,candidate1)

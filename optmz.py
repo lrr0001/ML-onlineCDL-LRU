@@ -36,14 +36,14 @@ class ADMM(tf.keras.layers.Layer):
         raise NotImplementedError
     def ustep(self,u,Ax_relaxed,By,negC):
         raise NotImplementedError
-    def itstats_record(self,x,y,u,Ax,By,negC,itstats):
+    def itstats_record(self,x,y,u,Ax,Ax_relaxed,By,negC,itstats):
         return itstats
     def solvestep(self,y,u,By,negC,itstats):
         x,Ax = self.xstep(y,u,By,negC)
         Ax_relaxed = self.relax(Ax,By,negC)
         y,By = self.ystep(x,u,Ax_relaxed,negC)
         u = self.ustep(u,Ax_relaxed,By,negC)
-        itstats = self.itstats_record(x,y,u,Ax,By,negC,itstats)
+        itstats = self.itstats_record(x,y,u,Ax,Ax_relaxed,By,negC,itstats)
         return (y,u,By,itstats)
 
     # Before and After:

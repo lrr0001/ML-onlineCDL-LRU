@@ -128,6 +128,87 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
         lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_z_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
         return lastlayer,lastlayer.mu
 
+    def init_itstats(self,s):
+        xprev = None
+        yprev = None
+        uprev = None
+        Byprev = None
+        prevs = (xprev,yprev,uprev,Byprev)
+        x_improvements = []
+        v_improvements = []
+        vplusz_improvements = []
+        y_improvements = (v_improvements,vplusz_improvements)
+        improvements = (x_improvements,y_improvements)
+        recon_err = []
+        cmprssd_recon_err = []
+        primal_err = []
+        cnstrnt_err = []
+        errs = (recon_err,cmprssd_recon_err,primal_err,cnstrnt_err)
+        return (prevs,improvements,errs)
+
+    def itstats_record(self,x,y,u,Ax,Ax_relaxed,By,negC,itstats):
+        prevs,improvements,errs = itstats
+        xprev,yprev,uprev,Byprev = prevs
+        x_improvements,y_improvements = improvements
+        v_improvements,vplusz_improvements = y_improvements
+        recon_err,cmprssd_recon_err,primal_err,cnstrnt_err = errs
+
+
+        # compute errors
+        currReconErr = self.reconstructionErrors(x,y)
+        recon_err.append(currReconErr)
+        currPrimalErr = currReconErr + self.penaltyErrors(y)
+        primal_err.append(currPrimalErr)
+        s_LF,QWs = negC
+        comprssd_s = self.Wt(QWs)
+        Dx = self.dictObj[0].dmul(x[0])
+        Dx_real = tf.squeeze(self.IFFT[0](Dx),axis=-1)
+        Dx_cropped = self.cropAndMerge.crop(Dx_real)
+        currCmprssdReconResid = comprssd_s - Dx_cropped
+        cmprssd_recon_err.append(tf.math.sqrt(tf.reduce_mean(currCmprssdReconResid**2)))
+        cnstrnt_err.append(self.constraintErrors(x,y,Ax,By,negC))
+        
+
+
+        # Compute improvements
+        if xprev is not None:
+            prevLagrang = self.evaluateLagrangian(xprev,yprev,uprev,Byprev,negC)
+            currLagrang = self.evaluateLagrangian(x,yprev,uprev,Byprev,negC)
+            x_improvements.append(prevLagrang - currLagrang)
+            prevRelaxedLagrang = self.evaluateRelaxedLagrangian(x,yprev,uprev,Ax,Byprev,negC)
+            currRelaxedLagrang = self.evaluateRelaxedLagrangian(x,y,uprev,Ax,By,negC)
+            vplusz_Lchange = prevRelaxedLagrang - currRelaxedLagrang
+            if self.noL > 1:
+                if self.strides[0] == 2:
+                    mu = self.updateZ_layer[0][0].mu
+                    #mu = self.updateZ_layer[0]['downsampled'].mu
+                else:
+                    mu = self.updateZ_layer[0].mu
+            else:
+                mu = self.updateZ_lastlayer.mu
+            vprev,zprev = yprev
+            Bvprev,Bzprev = Byprev
+            etaprev,gammaprev = uprev
+            vprev_cropped = self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](vprev),axis=-1))
+            augLangVprev = mu/2*self.reconstructionTerm(vprev_cropped,Dx_cropped) + self.jpegConstraint_relaxed(etaprev,Bvprev,negC)
+            v,z = y
+            Bv,Bz = By
+            eta,gamma = u
+            v_cropped = self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](v),axis=-1))
+            augLangVcurr = mu/2*self.reconstructionTerm(v_cropped,Dx_cropped) + self.jpegConstraint_relaxed(etaprev,Bv,negC)
+            v_Lchange = augLangVprev - augLangVcurr
+            v_improvements.append(v_Lchange)
+            vplusz_improvements.append(vplusz_Lchange)
+            y_improvements = (v_improvements,vplusz_improvements)
+
+        prevs = (x,y,u,By)
+        improvements = (x_improvements,y_improvements)
+        errs = (recon_err,cmprssd_recon_err,primal_err,cnstrnt_err)
+
+        itstats = (prevs,improvements,errs)
+        return itstats
+
+
     def get_output(self,s,y,u,By,negC,itstats):
         x,Ax = self.xstep(y,u,By,negC)
         Ax_relaxed = self.relax(Ax,By,negC)
@@ -230,17 +311,17 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
     def evaluateLagrangian(self,x,y,u,By,negC):
         recErr = self.reconstructionErrors(x,y)
         penaltyErr = self.penaltyErrors(y)
-        cnstrErr = self.constraintErrors(x,u,By,negC)
+        cnstrErr = self.augConstraintErrors(x,u,By,negC)
         return recErr + penaltyErr + cnstrErr
     def evaluateRelaxedLagrangian(self,x,y,u,Ax,By,negC):
         recErr = self.reconstructionErrors(x,y)
         penaltyErr = self.penaltyErrors(y)
-        cnstrErr = self.constraintErrors_relaxed(u,Ax,By)
+        cnstrErr = self.augConstraintErrors_relaxed(u,Ax,By,negC)
         return recErr + penaltyErr + cnstrErr
     def reconstructionErrors(self,x,y):
         v,z = y
         if self.noL > 1:
-            if strides[0] == 2:
+            if self.strides[0] == 2:
                 mu = self.updateZ_layer[0][0].mu
             #mu = self.updateZ_layer[0]['downsampled'].mu
             else:
@@ -268,14 +349,35 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
         for layer in range(self.noL):
             penaltyErr += self.penaltyTerm(self.IFFT[layer](z[layer]),layer)
         return penaltyErr
-    def constraintErrors(self,x,u,By,negC):
+    def constraintErrors(self,x,y,Ax,By,negC):
+        s_LF,QWs = negC
+        Bv,Bz = By
+        constraintErr = self.jpegConstraint((0.,0.,0.),Bv,QWs)
+        for layer in range(self.noL):
+            if layer < self.noL - 1:
+                if self.strides[layer] == 2:
+                    mu = self.updateZ_layer[layer][0].mu
+                else:
+                    mu = self.updateZ_layer[layer].mu
+                #z_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
+                z_over_R = self.dictObj[layer].divide_by_R(Bz[layer])
+            else:
+                mu = self.updateZ_lastlayer.mu
+                z_over_R = Bz[layer]
+            constraintErr += (mu/2)*self.zxConstraint(tf.cast(0.,self.cmplxdtype),x[layer],z_over_R)/self.FFT_factor[layer]
+        return constraintErr        
+
+    def augConstraintErrors(self,x,u,By,negC):
         s_LF,QWs = negC
         Bv,Bz = By
         eta,gamma = u
         constraintErr = self.jpegConstraint(eta,Bv,QWs)
         for layer in range(self.noL):
             if layer < self.noL - 1:
-                mu = self.updateZ_layer[layer].mu
+                if self.strides[layer] == 2:
+                    mu = self.updateZ_layer[layer][0].mu
+                else:
+                    mu = self.updateZ_layer[layer].mu
                 #z_over_R = Bz[layer]/util.complexNum(util.rotate_dims_left(self.dictObj[layer].R,5))
                 z_over_R = self.dictObj[layer].divide_by_R(Bz[layer])
             else:
@@ -283,11 +385,12 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
                 z_over_R = Bz[layer]
             constraintErr += (mu/2)*self.zxConstraint(gamma[layer],x[layer],z_over_R)/self.FFT_factor[layer]
         return constraintErr
-    def constraintErrors_relaxed(self,u,Ax,By):
+    def augConstraintErrors_relaxed(self,u,Ax,By,negC):
         Azero,Ax = Ax
         Bv,Bz = By
         eta,gamma = u
-        constraintErr = self.jpegConstraint_relaxed(eta,Azero,Bv)
+        s_LF,QWs = negC
+        constraintErr = self.jpegConstraint(eta,Bv,QWs)
         for layer in range(self.noL):
             if layer < self.noL - 1:
                 if self.strides[layer] == 2:
@@ -363,7 +466,7 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
             return self.updateZ_downsample(x_nextlayer,Ax_relaxed,gamma_scaled,layer)
         Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
         #z = self.updateZ_layer[layer]((self.IFFT[layer](Dx),self.IFFT[layer](Ax_relaxed),self.IFFT[layer](gamma_scaled)))
-        z = self.updateZ_layer[layer]((Dx,Ax_relaxed,gamma_scaled))
+        z = self.updateZ_layer[layer]((Dx,Ax_relaxed + gamma_scaled))
         return self.FFT[layer](z)
     def updateZ_downsample(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
         assert(layer < self.noL - 1)
@@ -419,18 +522,23 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
 
     def penaltyTerm(self,z,layer):
         if layer < self.noL - 1:
-            return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer[layer].b*z))
+            if self.strides[layer] == 2:
+                b = self.updateZ_layer[layer][4]((self.updateZ_layer[layer][3]((self.updateZ_layer[layer][0].b,self.updateZ_layer[layer][1].b)),self.updateZ_layer[layer][2].b))
+                return tf.math.reduce_sum(tf.math.abs(b*z))
+            else:
+                return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer[layer].b*z))
         else:
             return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.math.maximum(z,0.)))/self.rho/self.updateZ_lastlayer.mu
     def jpegConstraint(self,eta_over_rho,QWz,QWs):
         #aug_cnstrnt_term = [QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))]
         #return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(QWs))])
-        aug_cnstrnt_term = self.Wt([QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))])
+        aug_cnstrnt_term = self.Wt([(QWz[channel] - QWs[channel] + eta_over_rho[channel])/ds_factor for (channel,ds_factor) in zip(range(len(QWs)),(1.,4.,4.))])
         return self.rho/2*tf.math.reduce_sum(aug_cnstrnt_term*tf.math.conj(aug_cnstrnt_term))
-    def jpegConstraint_relaxed(self,eta_over_rho,Azero,Bv):
+    def jpegConstraint_relaxed(self,eta_over_rho,Bv,negC):
+        s_LF,QWs = negC
         #aug_cnstrnt_term = [Azero[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))]
         #return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(Bv))])
-        aug_cnstrnt_term = self.Wt([Azero[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))])
+        aug_cnstrnt_term = self.Wt([(-QWs[channel] + Bv[channel] + eta_over_rho[channel])/ds_factor for (channel,ds_factor) in zip(range(len(Bv)),(1.,4.,4.))])
         return self.rho/2*tf.math.reduce_sum(aug_cnstrnt_term*tf.math.conj(aug_cnstrnt_term))
     def zxConstraint(self,gamma_over_rho,x_over_R,z_over_R):
         rho = util.complexNum(self.rho)
