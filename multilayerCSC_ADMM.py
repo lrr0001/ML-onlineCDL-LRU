@@ -108,7 +108,7 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
 
     def build_updateZ_layer(self,fftSz,nof,rho,mu_init,munext,dictObj,nextdictObj,b_init,cmplxdtype,strides,layer):
         if strides == 2:
-            zshapes = self.get_downsampled_z_shape(fftSz,nof)
+            zshapes = self.get_downsampled_b_shape(fftSz,nof)
             #Zupdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
             Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
             mu = Zupdate.mu
@@ -121,11 +121,11 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
             #return {'downsampled': Zupdate, 'shifted': Z_update_shift, 'missed_cols': Z_update_missed_cols,'shift_concat': shift_concat,'cols_concat': cols_concat},mu 
             return (Zupdate,Z_update_shift,Z_update_missed_cols,shift_concat,cols_concat),mu
         else:
-            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_z_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_b_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
             return zUpdate,zUpdate.mu
 
     def build_updateZ_lastlayer(self,fftSz,nof,rho,mu_init,dictObj,b_init, cmplxdtype):
-        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_z_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_b_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
         return lastlayer,lastlayer.mu
 
     def init_itstats(self,s):
@@ -175,8 +175,8 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
             prevLagrang = self.evaluateLagrangian(xprev,yprev,uprev,Byprev,negC)
             currLagrang = self.evaluateLagrangian(x,yprev,uprev,Byprev,negC)
             x_improvements.append(prevLagrang - currLagrang)
-            prevRelaxedLagrang = self.evaluateRelaxedLagrangian(x,yprev,uprev,Ax,Byprev,negC)
-            currRelaxedLagrang = self.evaluateRelaxedLagrangian(x,y,uprev,Ax,By,negC)
+            prevRelaxedLagrang = self.evaluateRelaxedLagrangian(x,yprev,uprev,Ax_relaxed,Byprev,negC)
+            currRelaxedLagrang = self.evaluateRelaxedLagrangian(x,y,uprev,Ax_relaxed,By,negC)
             vplusz_Lchange = prevRelaxedLagrang - currRelaxedLagrang
             if self.noL > 1:
                 if self.strides[0] == 2:
@@ -218,10 +218,14 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
         v = self.IFFT[0](v)
         return (self.cropAndMerge.crop(tf.squeeze(v,axis=-1)) + s_LF,itstats)
 
-    def get_z_shape(self,fftSz,M):
-        return [1,fftSz[0],fftSz[1],M,1,]
+    def get_b_shape(self,fftSz,M):
+        #return [1,fftSz[0],fftSz[1],M,1,]
+        return [1,1,1,M,1]
 
-    def get_downsampled_z_shape(self,fftSz,M):
+    def get_downsampled_b_shape(self,fftSz,M):
+        # This is an error
+        print('Stride is currently broken, and the downsampled z-updates within the same layer should probably share the same b.')
+        raise NotImplementedError
         return ((1,int(fftSz[0]/2),int(fftSz[1]/2),M,1),(1,fftSz[0],int(fftSz[1]/2),M,1))
 
     # High-level Initialization Functions (x,y,u,Ax,By,C)

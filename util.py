@@ -50,7 +50,8 @@ class AlternateConcat(tf.keras.layers.Layer):
         target_shape = shape[:axis - 1] + (shape[axis - 1]*num_of_items,) + shape[axis:]
         self.reshape = tf.keras.layers.Reshape(target_shape = target_shape, dtype = self.dtype)
     def call(self,inputs):
-        concat_tensor = tf.concat(list(map(alternate_reshape,zip(inputs,self.num_of_items*(self.axis,)))),self.axis)
+        #concat_tensor = tf.concat(list(map(alternate_reshape,zip(inputs,self.num_of_items*(self.axis,)))),self.axis)
+        concat_tensor = tf.concat(list([tf.expand_dims(tensor_input,self.axis + 1) for tensor_input in inputs]),axis=self.axis + 1)
         return self.reshape(concat_tensor)
     def get_config(self):
         return {'axis': self.axis, 'num_of_items': self.num_of_items}
