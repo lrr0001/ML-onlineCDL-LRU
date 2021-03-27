@@ -21,7 +21,7 @@ class Smooth_JPEG(optmz.ADMM):
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
         #self.relaxlayer = Relax_SmoothJPEG(dtype=self.dtype) # move alpha to uupdate
         self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
-        self.uupdate = GammaUpdate_JPEG(self.alpha,dtype=self.dtype)
+        self.uupdate = GammaUpdate_JPEG(self.alpha,self.qY,self.qUV,dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
     def init_x(self,s,negC):
@@ -314,11 +314,18 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         return (z,QWz)
 
 class GammaUpdate_JPEG(tf.keras.layers.Layer):
+    #def __init__(self,alpha,qY,qUV,*args,**kwargs):
     def __init__(self,alpha,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.alpha = alpha
+        #self.qY = qY
+        #self.qUV = qUV
+    def get_config(self):
+        return {'qY': self.qy,'qUV': self.qUV}
     def call(self, inputs):
         gamma_over_rho,QWz,negC = inputs
+        #cdiff = [Wz[channel] - negC[channel] for channel in range(len(Wz))]
+        #return [gamma_over_rho[channel] + self.alpha*tf.math.sign(cdiff[channel])*(tf.abs(cdiff[channel]) - tf.math.maximum(tf.abs(cdiff[channel]),halfqminus(q))) for (channel,q) in zip(range(len(Wz)),(self.qY,self.qUV,self.qUV))]
         return [gamma_over_rho[channel] + self.alpha*(QWz[channel] - negC[channel]) for channel in range(len(QWz))]
 
 class QuantizationAdjustment(tf.keras.layers.Layer):

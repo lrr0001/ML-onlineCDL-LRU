@@ -108,14 +108,14 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
 
     def build_updateZ_layer(self,fftSz,nof,rho,mu_init,munext,dictObj,nextdictObj,b_init,cmplxdtype,strides,layer):
         if strides == 2:
-            zshapes = self.get_downsampled_b_shape(fftSz,nof)
+            zshapes = self.get_b_shape(fftSz,nof)
             #Zupdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
-            Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes,value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
             mu = Zupdate.mu
             #Z_update_shift = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
-            Z_update_shift = GetNextIterZFreq_downsampleTossed(rho,self.IFFT[layer + 1],mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            Z_update_shift = GetNextIterZFreq_downsampleTossed(rho,self.IFFT[layer + 1],mu,dictObj,Zupdate.b,dtype=cmplxdtype)
             ifft = transf.ifft2d_inner(zshapes[1][1:3])
-            Z_update_missed_cols = GetNextIterZFreq_downsampleTossed(rho,ifft,mu,dictObj,tf.fill(zshapes[1],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            Z_update_missed_cols = GetNextIterZFreq_downsampleTossed(rho,ifft,mu,dictObj,Zupdate.b,dtype=cmplxdtype)
             shift_concat = util.AlternateConcat(shape=zshapes[0][1:],num_of_items=2,axis=1,dtype = cmplxdtype.real_dtype)
             cols_concat = util.AlternateConcat(shape=zshapes[1][1:],num_of_items=2,axis=2,dtype = cmplxdtype.real_dtype)
             #return {'downsampled': Zupdate, 'shifted': Z_update_shift, 'missed_cols': Z_update_missed_cols,'shift_concat': shift_concat,'cols_concat': cols_concat},mu 
@@ -222,11 +222,12 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
         #return [1,fftSz[0],fftSz[1],M,1,]
         return [1,1,1,M,1]
 
-    def get_downsampled_b_shape(self,fftSz,M):
+    # Function is no longer necessary
+    #def get_downsampled_b_shape(self,fftSz,M):
         # This is an error
-        print('Stride is currently broken, and the downsampled z-updates within the same layer should probably share the same b.')
-        raise NotImplementedError
-        return ((1,int(fftSz[0]/2),int(fftSz[1]/2),M,1),(1,fftSz[0],int(fftSz[1]/2),M,1))
+    #    print('Stride is currently broken, and the downsampled z-updates within the same layer should probably share the same b.')
+    #    raise NotImplementedError
+    #    return ((1,int(fftSz[0]/2),int(fftSz[1]/2),M,1),(1,fftSz[0],int(fftSz[1]/2),M,1))
 
     # High-level Initialization Functions (x,y,u,Ax,By,C)
     def get_negative_C(self,s):
@@ -533,16 +534,22 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
                 return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer[layer].b*z))
         else:
             return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.math.maximum(z,0.)))/self.rho/self.updateZ_lastlayer.mu
-    def jpegConstraint(self,eta_over_rho,QWz,QWs):
+    def jpegConstraint(self,eta_over_rho,Wv,QWs):
         #aug_cnstrnt_term = [QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))]
         #return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(QWs))])
-        aug_cnstrnt_term = self.Wt([(QWz[channel] - QWs[channel] + eta_over_rho[channel])/ds_factor for (channel,ds_factor) in zip(range(len(QWs)),(1.,4.,4.))])
+        #Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
+        #QWz = jrf.threeChannelQuantize(Wz,self.qY,self.qUV,Yoffset)
+        QWv = Wv
+        aug_cnstrnt_term = self.Wt([(QWv[channel] - QWs[channel] + eta_over_rho[channel])/ds_factor for (channel,ds_factor) in zip(range(len(QWs)),(1.,4.,4.))])
         return self.rho/2*tf.math.reduce_sum(aug_cnstrnt_term*tf.math.conj(aug_cnstrnt_term))
     def jpegConstraint_relaxed(self,eta_over_rho,Bv,negC):
         s_LF,QWs = negC
         #aug_cnstrnt_term = [Azero[channel] + Bv[channel] + eta_over_rho[channel] for channel in range(len(Bv))]
         #return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(Bv))])
-        aug_cnstrnt_term = self.Wt([(-QWs[channel] + Bv[channel] + eta_over_rho[channel])/ds_factor for (channel,ds_factor) in zip(range(len(Bv)),(1.,4.,4.))])
+        QWv = Bv
+        #Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
+        #QWv = jrf.threeChannelQuantize(Bv,self.qY,self.qUV,Yoffset)
+        aug_cnstrnt_term = self.Wt([(-QWs[channel] + QWv[channel] + eta_over_rho[channel])/ds_factor for (channel,ds_factor) in zip(range(len(Bv)),(1.,4.,4.))])
         return self.rho/2*tf.math.reduce_sum(aug_cnstrnt_term*tf.math.conj(aug_cnstrnt_term))
     def zxConstraint(self,gamma_over_rho,x_over_R,z_over_R):
         rho = util.complexNum(self.rho)
