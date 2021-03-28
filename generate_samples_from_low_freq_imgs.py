@@ -9,7 +9,7 @@ def savePatch(coord,lowpass,highpass,raw,padding,patch_size,qY,qUV,Yoffset,datap
     rawPatch =  raw[slice(rowCoord,rowCoord + patch_size[0]),slice(colCoord,colCoord + patch_size[1]),slice(None)]
     W = jrf.YUV2JPEG_Coef(dtype = dtype)
     Wt = jrf.JPEG_Coef2YUV(dtype = dtype)
-    compressedPatch = Wt(jrf.threeChannelQuantize(W(tf.expand_dims(rawPatch,axis=0)),qY,qUV,Yoffset))
+    compressedPatch = Wt(jrf.threeChannelQuantize(W(jrf.YUV2RGB(dtype=dtype)(tf.expand_dims(rawPatch,axis=0))),qY,qUV,Yoffset))
     compressedPatch = tf.squeeze(compressedPatch,axis=0)
     highpassPatch = highpass[slice(rowCoord - padding[0][0],rowCoord + patch_size[0] + padding[0][1]),slice(colCoord - padding[1][0],colCoord + patch_size[1] + padding[1][1]),slice(None)]
     fid_raw = open(datapath + 'raw/' + filename,'wb')

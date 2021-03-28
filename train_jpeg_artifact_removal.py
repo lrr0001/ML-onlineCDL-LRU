@@ -101,8 +101,9 @@ compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dt
 inputs = (highpass,lowpass,compressed)
 
 reconstruction,itstats = CSC(inputs)
+rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 import post_process_grad as ppg
-model = ppg.Model_PostProcess(inputs,reconstruction)
+model = ppg.Model_PostProcess(inputs,rgb_reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 import time

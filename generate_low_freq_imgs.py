@@ -3,11 +3,11 @@ import jpeg_related_functions as jrf
 import pickle as pkl
 
 # Set parameters
-jpeg_quality = 20
+jpeg_quality = 25
 rho = 1.
 alpha = 1.5
-noi = 0
-lmbda = 1.
+noi = 20
+lmbda = 0.1
 dtype = 'float64'
 
 # Obtain quantization matrices from chosen quality factor
@@ -44,12 +44,13 @@ for datatype in ['train/','val/',]:
         loadedImgShape = loadedImg.shape
         # crop out a row and a column
         loadedImg = loadedImg[slice(0,loadedImgShape[0] - (loadedImgShape[0] % 8)),slice(0,loadedImgShape[1] - (loadedImgShape[1] % 8)),slice(None)]
+        raw = tf.reshape(loadedImg,(1,) + loadedImg.shape)
         if loadedImgShape[0] - (loadedImgShape[0] % 8) == 480 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 320:
            # compressedImg = smooth_jpeg1.Wt(jrf.threeChannelQuantize(smooth_jpeg1.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
-            lowpass,compressedImg,raw = smooth_jpeg1(tf.reshape(loadedImg,(1,) + loadedImg.shape))
+            lowpass,compressedImg = smooth_jpeg1(raw)
         elif loadedImgShape[0] - (loadedImgShape[0] % 8) == 320 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 480:
             #compressedImg = smooth_jpeg2.Wt(jrf.threeChannelQuantize(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
-            lowpass,compressedImg,raw = smooth_jpeg2(tf.reshape(loadedImg,(1,) + loadedImg.shape))
+            lowpass,compressedImg = smooth_jpeg2(tf.reshape(raw)
         else:
             raise ValueError('Unexpected Shape!')
 

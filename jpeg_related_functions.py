@@ -21,7 +21,7 @@ class Smooth_JPEG(optmz.ADMM):
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
         #self.relaxlayer = Relax_SmoothJPEG(dtype=self.dtype) # move alpha to uupdate
         self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
-        self.uupdate = GammaUpdate_JPEG(self.alpha,self.qY,self.qUV,dtype=self.dtype)
+        self.uupdate = GammaUpdate_JPEG(self.alpha,dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
     def init_x(self,s,negC):
@@ -46,11 +46,11 @@ class Smooth_JPEG(optmz.ADMM):
         return (None,)
     def ystep(self,x,u,Ax_relaxed,negC):
         return self.yupdate((x,u,negC))
-    def ustep(self,u,By,negC):
+    def ustep(self,u,Ax_relaxed,By,negC):
         return self.uupdate((u,By,negC))
 
     # Before and After:
-    def preprocessing(s):
+    def preprocess(self,s):
         rgb2yuv = RGB2YUV(dtype=self.dtype)
         return rgb2yuv(s)
     def get_output(self,s,y,u,By,negC,itstats):
@@ -59,7 +59,7 @@ class Smooth_JPEG(optmz.ADMM):
                Compressed image (YUV)
                Raw image (YUV)'''
         x,Ax = self.xstep(y,u,By,negC)
-        return (x,self.Wt(negC),s)
+        return (x,self.Wt(negC))
 
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
@@ -215,9 +215,11 @@ def h(z,y):
 
 @tf.custom_gradient # bad gradient in respect to q, but q shouldn't depend on trainable variable
 def _quantize(w,q):
+    quantized = q*tf.mth.round(w/q)
+    nonzero = quantized == tf.cast(0.,w.dtype)
     def grad(g):
-        return (tf.identity(g),None)
-    return q*tf.math.round(w/q),grad
+        return (tf.where(nonzero,g,g-g),None)
+    return quantized,grad
 
 #@tf.custom_gradient
 def quantize(w,q,offset=None):
@@ -304,7 +306,7 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         Wx = self.W(fx)
         r = [Wx[channel] + gamma_over_rho[channel] - negC[channel] for channel in range(len(Wx))]
         r_factor = [(self.rho/ds_factor)/(self.mu + self.rho/ds_factor) for ds_factor in (1.,16.,16.)]
-        Wdeltaz = [self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
+        Wdeltaz = tf.stop_gradient([self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))])
         z = fx - self.Wt([r[channel]*r_factor[channel] for channel in range(len(Wx))]) + self.Wt(Wdeltaz)
         #Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
         Wz = [Wx[channel] - r_factor[channel]*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]

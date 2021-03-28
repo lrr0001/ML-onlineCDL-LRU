@@ -7,7 +7,7 @@ import util
 import numpy as np
 import post_process_grad as ppg
 
-class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
+class MultiLayerCSC(optmz.ADMM):
     '''
     x: list
        x[\ell] = \mR_{\ell}^{-1}\vx_{\ell}
@@ -32,7 +32,8 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
         s_LF
         QWs
     '''
-    def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,lraParam,noi,noL,cmplxdtype,*args,**kwargs):
+    def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,lraParam,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
+        self.longitstat = longitstat
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
         rho = tf.cast(rho,dtype = cmplxdtype.real_dtype)
@@ -51,7 +52,8 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
                        'qY': self.qY,
                        'qUV': self.qUV,
                        'rho': self.rho,
-                       'noi': self.noi}
+                       'noi': self.noi,
+                       'record_iteration_stats': self.longitstat}
         return config_dict
 
     def initializeLayers(self,rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype):
@@ -121,14 +123,16 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
             #return {'downsampled': Zupdate, 'shifted': Z_update_shift, 'missed_cols': Z_update_missed_cols,'shift_concat': shift_concat,'cols_concat': cols_concat},mu 
             return (Zupdate,Z_update_shift,Z_update_missed_cols,shift_concat,cols_concat),mu
         else:
-            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_b_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_b_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype,name='Z_layer' + str(layer))
             return zUpdate,zUpdate.mu
 
     def build_updateZ_lastlayer(self,fftSz,nof,rho,mu_init,dictObj,b_init, cmplxdtype):
-        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_b_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_b_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype,name='Z_layer' + str(self.noL - 1))
         return lastlayer,lastlayer.mu
 
     def init_itstats(self,s):
+        if not self.longitstat:
+            return []
         xprev = None
         yprev = None
         uprev = None
@@ -147,6 +151,8 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
         return (prevs,improvements,errs)
 
     def itstats_record(self,x,y,u,Ax,Ax_relaxed,By,negC,itstats):
+        if not self.longitstat:
+            return []
         prevs,improvements,errs = itstats
         xprev,yprev,uprev,Byprev = prevs
         x_improvements,y_improvements = improvements
@@ -211,12 +217,12 @@ class MultiLayerCSC(optmz.ADMM,ppg.PostProcess):
 
     def get_output(self,s,y,u,By,negC,itstats):
         x,Ax = self.xstep(y,u,By,negC)
-        Ax_relaxed = self.relax(Ax,By,negC)
-        y,By = self.ystep(x,u,Ax_relaxed,negC)
-        v,z = y
-        s_LF,QWs = negC
-        v = self.IFFT[0](v)
-        return (self.cropAndMerge.crop(tf.squeeze(v,axis=-1)) + s_LF,itstats)
+        #Ax_relaxed = self.relax(Ax,By,negC)
+        #y,By = self.ystep(x,u,Ax_relaxed,negC)
+        #v,z = y
+        #s_LF,QWs = negC
+        Dx = self.IFFT[0](self.dictObj[0].dmul(x[0]))
+        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,itstats)
 
     def get_b_shape(self,fftSz,M):
         #return [1,fftSz[0],fftSz[1],M,1,]
@@ -633,7 +639,7 @@ class GetNextIterZ(tf.keras.layers.Layer):
     def get_config(self):
         return {'rho': self.rho}
 
-class GetNextIterZFreq(tf.keras.layers.Layer):
+class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
     '''
      inputs: All must be in frequency domain.
 
@@ -645,15 +651,22 @@ class GetNextIterZFreq(tf.keras.layers.Layer):
        z: \vz_{\ell}^{(k + 1)}
     '''
     def __init__(self,rho,ifft,mu_init,mu_nextlayer,dictObj,dictObj_nextlayer,b_init,*args,**kwargs):
-        super().__init__(*args,**kwargs)
+        #super().__init__(*args,**kwargs)
+        tf.keras.layers.Layer(self,*args,**kwargs)
         self.rho = rho
         self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
         self.mu_nextlayer = mu_nextlayer
         self.dictObj = dictObj
         self.dictObj_nextlayer = dictObj_nextlayer
-        self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        with tf.name_scope(self.name):
+            self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
         self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
+        ppg.PostProcess.add_update(self.b.name,self._update_b)
+
+    def _update_b(self):
+        self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b))
+
     def call(self,inputs):
         # Inputs are in frequency domain, but output is in spatial domain.
         Dx_nextlayer,Ax_relaxed_plus_gamma_scaled = inputs
@@ -664,7 +677,7 @@ class GetNextIterZFreq(tf.keras.layers.Layer):
         return {'rho': self.rho}
 
 
-class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
+class GetNextIterZ_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
     '''
       inputs: All must be in spatial domain.
 
@@ -680,12 +693,13 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer):
         self.dictObj = dictObj
         self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=self.dtype) # Is this an active design decision to avoid dependence on mu?
         self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
+
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
         R = util.rotate_dims_left(self.dictObj.divide_by_R.R)
         return self.relu(-Ax_relaxed - gamma_scaled - R*self.b)
 
-class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer):
+class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
     '''
       inputs: All must be in frequency domain.
 
@@ -696,12 +710,19 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer):
         z_over_R: \mR_L^{-1}\vz_L^{(k + 1)}
     '''
     def __init__(self,rho,ifft,mu_init,dictObj,b_init,*args,**kwargs):
-        super().__init__(*args,**kwargs)
+        #super().__init__(*args,**kwargs)
+        tf.keras.layers.Layer.__init__(self,*args,**kwargs)
         self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
         self.dictObj = dictObj
-        self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype) # Is this an active design decision to avoid dependence on mu?
+        with tf.name_scope(self.name):
+            self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype) # Is this an active design decision to avoid dependence on mu?
         self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
-        self.ifft = ifft 
+        self.ifft = ifft
+        ppg.PostProcess.add_update(self.b.name,self._update_b)
+
+    def _update_b(self):
+        self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b))
+
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
         R = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
