@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-
+import tensorflow as tf
 
 
 class LearningRateFinder(tf.keras.callbacks.Callback):
@@ -19,7 +19,7 @@ class LearningRateFinder(tf.keras.callbacks.Callback):
         self.history = {}
         
     def get_learning_rate(self):
-        return self.min_lr*(self.max_lr/self.min_lr)**(self.iteration/self.total_iterations)
+        return self.lrMin*(self.lrMax/self.lrMin)**(self.iteration/self.total_iterations)
         
     def on_train_begin(self, logs=None):
         logs = logs or {}

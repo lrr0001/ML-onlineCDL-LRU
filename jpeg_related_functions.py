@@ -215,7 +215,7 @@ def h(z,y):
 
 @tf.custom_gradient # bad gradient in respect to q, but q shouldn't depend on trainable variable
 def _quantize(w,q):
-    quantized = q*tf.mth.round(w/q)
+    quantized = q*tf.math.round(w/q)
     nonzero = quantized == tf.cast(0.,w.dtype)
     def grad(g):
         return (tf.where(nonzero,g,g-g),None)
@@ -306,7 +306,7 @@ class ZUpdate_JPEG(tf.keras.layers.Layer):
         Wx = self.W(fx)
         r = [Wx[channel] + gamma_over_rho[channel] - negC[channel] for channel in range(len(Wx))]
         r_factor = [(self.rho/ds_factor)/(self.mu + self.rho/ds_factor) for ds_factor in (1.,16.,16.)]
-        Wdeltaz = tf.stop_gradient([self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel])) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))])
+        Wdeltaz = [tf.stop_gradient(self.qntzn_adjst[channel]((Wx[channel] + offset,r[channel]))) for (channel,offset) in zip(range(len(Wx)),(self.Yoffset,0.,0.))]
         z = fx - self.Wt([r[channel]*r_factor[channel] for channel in range(len(Wx))]) + self.Wt(Wdeltaz)
         #Wz = [Wx[channel] - self.rho/(self.mu + self.rho)*r[channel] for channel in range(len(Wx))]
         Wz = [Wx[channel] - r_factor[channel]*r[channel] + Wdeltaz[channel] for channel in range(len(Wx))]

@@ -216,6 +216,7 @@ class MultiLayerCSC(optmz.ADMM):
 
 
     def get_output(self,s,y,u,By,negC,itstats):
+        s_LF,QWs = negC
         x,Ax = self.xstep(y,u,By,negC)
         #Ax_relaxed = self.relax(Ax,By,negC)
         #y,By = self.ystep(x,u,Ax_relaxed,negC)
@@ -652,7 +653,7 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
     '''
     def __init__(self,rho,ifft,mu_init,mu_nextlayer,dictObj,dictObj_nextlayer,b_init,*args,**kwargs):
         #super().__init__(*args,**kwargs)
-        tf.keras.layers.Layer(self,*args,**kwargs)
+        tf.keras.layers.Layer.__init__(self,*args,**kwargs)
         self.rho = rho
         self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
         self.mu_nextlayer = mu_nextlayer
@@ -665,7 +666,7 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         ppg.PostProcess.add_update(self.b.name,self._update_b)
 
     def _update_b(self):
-        self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b))
+        return [self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b)),]
 
     def call(self,inputs):
         # Inputs are in frequency domain, but output is in spatial domain.
@@ -721,7 +722,7 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         ppg.PostProcess.add_update(self.b.name,self._update_b)
 
     def _update_b(self):
-        self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b))
+        return [self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b)),]
 
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
