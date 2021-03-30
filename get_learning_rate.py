@@ -136,7 +136,7 @@ log_sha_command = "git log --pretty=format:'%h' -n 1 >> "
 import os
 os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
-smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.005, lrMax=50, steps=num_of_steps - 1)
+smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.005, lrMax=500, steps=num_of_steps - 1)
 model.fit(x=dataset_batch,epochs=1,steps_per_epoch=num_of_steps,shuffle=False,callbacks = [smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
