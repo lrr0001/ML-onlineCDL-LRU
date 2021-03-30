@@ -130,7 +130,7 @@ log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S.lo
 tensorboard_callback = tf.keras.callbacks.TensorBoard(
       log_dir = log_dir,
       histogram_freq = 1,
-      profile_batch = '2,5'
+      profile_batch = '35,39'
 )
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
@@ -143,6 +143,6 @@ time_callback = TimeHistory()
 for ii in range(num_of_saves):
     if ii == 1:
         with tf.profiler.experimental.Profile(log_dir):
-            model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=8,shuffle=False,callbacks = [time_callback,])
+            model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=40,shuffle=False,callbacks = [time_callback,])
     else:
         model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=8,shuffle=False,callbacks = [time_callback,])
