@@ -52,7 +52,7 @@ for datatype in ['train/','val/','test/']:
             lowpass,compressedImg = smooth_jpeg1(raw)
         elif loadedImgShape[0] - (loadedImgShape[0] % 8) == 320 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 480:
             #compressedImg = smooth_jpeg2.Wt(jrf.threeChannelQuantize(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
-            lowpass,compressedImg = smooth_jpeg2(tf.reshape(raw)
+            lowpass,compressedImg = smooth_jpeg2(raw)
         else:
             raise ValueError('Unexpected Shape!')
 
