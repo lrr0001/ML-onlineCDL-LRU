@@ -131,7 +131,6 @@ log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S.lo
 
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
-model.save_weights(experimentpath + modelfilename)
 sha_name = "SHA.txt"
 log_sha_command = "git log --pretty=format:'%h' -n 1 >> "
 import os
