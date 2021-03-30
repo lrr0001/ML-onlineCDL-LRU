@@ -5,6 +5,7 @@ import numpy as np
 import pickle as pkl
 import datetime
 import smith_lr_search
+import util
 
 #   ******** ALGORITHM-SPECIFIC HYPERPARAMETERS ********
 rho = 1.
