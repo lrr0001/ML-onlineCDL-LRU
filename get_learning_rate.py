@@ -140,5 +140,5 @@ smith_callback = smith_lr_search.LearningRateFinder()
 model.fit(x=dataset_batch,epochs=1,steps_per_epoch=8,shuffle=False,callbacks = [smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
-pkl.dump(smith_callback,fid)
+pkl.dump(smith_callback.output_summary(),fid)
 fid.close()

@@ -37,19 +37,22 @@ class LearningRateFinder(tf.keras.callbacks.Callback):
             self.history.setdefault(k, []).append(v)
             
         tf.keras.backend.set_value(self.model.optimizer.lr, self.get_learning_rate())
+
+    def output_summary(self):
+        return {'iterations': self.history['iterations'],'learning_rate': self.history['lr'],'loss': self.history['loss']}
  
-    def plot_lr(self):
-        '''Visualize learning rate schedule.'''
-        plt.plot(self.history['iterations'], self.history['lr'])
-        plt.yscale('log')
-        plt.xlabel('Iteration')
-        plt.ylabel('Learning rate')
-        plt.show()
+    #def plot_lr(self):
+    #    '''Visualize learning rate schedule.'''
+    #    plt.plot(self.history['iterations'], self.history['lr'])
+    #    plt.yscale('log')
+    #    plt.xlabel('Iteration')
+    #    plt.ylabel('Learning rate')
+    #    plt.show()
         
-    def plot_loss(self):
-        '''Plot loss vs learning rate.'''
-        plt.plot(self.history['lr'], self.history['loss'])
-        plt.xscale('log')
-        plt.xlabel('Learning rate')
-        plt.ylabel('Loss')
-        plt.show()
+    #def plot_loss(self):
+    #    '''Plot loss vs learning rate.'''
+    #    plt.plot(self.history['lr'], self.history['loss'])
+    #    plt.xscale('log')
+    #    plt.xlabel('Learning rate')
+    #    plt.ylabel('Loss')
+    #    plt.show()
