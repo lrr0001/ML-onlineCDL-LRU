@@ -37,7 +37,7 @@ Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype = dtype),tf.cast(0.,dtype= dty
 # Loop through images
 dataPath = 'data/original/' + datasetname
 filelist = os.listdir(dataPath)
-savePath = 'data/scratchwork/' + datasetname = '/whole/'
+savePath = 'data/scratchwork/' + datasetname + '/whole/'
 for datatype in ['train/','val/','test/']:
     filelist = os.listdir(dataPath + datatype)
     for filename in filelist:
