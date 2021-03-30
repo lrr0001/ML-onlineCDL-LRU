@@ -120,3 +120,23 @@ def freq_col_shift_downsample(input_tensor):
     expFun = tf.math.exp((2j*math.pi/N)*tf.cast(tf.range(0,input_tensor.shape[2],1),dtype=input_tensor.dtype))
     shifted_tensor = tf.reshape(expFun,shape=(1,1,input_tensor.shape[2]) + (1,)*(len(input_tensor.shape) - 3))*input_tensor
     return freq_col_downsample(shifted_tensor)
+
+class clip(tf.keras.layers.Layer):
+    def __init__(self,a=None,b=None,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        if a is not None:
+            self.a = tf.cast(a,self.dtype)
+        else:
+            self.a = None
+        if b is not None:
+            self.b = tf.cast(b,self.dtype)
+        else:
+            self.b = None
+    def call(self,inputs):
+        if self.b is not None:
+            inputs = tf.where(inputs > self.b,inputs - tf.stop_gradient(inputs - self.b),inputs)
+        if self.a is not None:
+            inputs = tf.where(inputs < self.a,inputs - tf.stop_gradient(inputs - self.a),inputs)
+        return inputs
+    def get_config(self):
+        return {'a': self.a, 'b': self.b}

@@ -13,9 +13,7 @@ mu_init = 1.
 b_init = 0.
 lraParam = {'n_components': 4}
 cmplxdtype = tf.complex128 # This should really be elsewhere.
-batch_size = 8
-noe_per_save = 1
-num_of_saves = 2
+batch_size = 20
 step_size = 0.1
 
 
@@ -103,8 +101,9 @@ inputs = (highpass,lowpass,compressed)
 
 reconstruction,itstats = CSC(inputs)
 rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
+clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
 import post_process_grad as ppg
-model = ppg.Model_PostProcess(inputs,rgb_reconstruction)
+model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 import time
@@ -127,11 +126,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
     def on_epoch_end(self, batch, logs={}):
         self.train_times.append(time.time() - self.epoch_time_start)
 log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S.log")
-tensorboard_callback = tf.keras.callbacks.TensorBoard(
-      log_dir = log_dir,
-      histogram_freq = 1,
-      profile_batch = '2,5'
-)
+
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
 model.save_weights(experimentpath + modelfilename)
@@ -141,7 +136,7 @@ import os
 os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
 smith_callback = smith_lr_search.LearningRateFinder()
-model.fit(x=dataset_batch,epochs=1,steps_per_epoch=128,shuffle=False,callbacks = [smith_callback,])
+model.fit(x=dataset_batch,epochs=1,steps_per_epoch=8,shuffle=False,callbacks = [smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
 pkl.dump(smith_callback,fid)

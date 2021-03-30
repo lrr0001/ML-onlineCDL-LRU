@@ -103,8 +103,9 @@ inputs = (highpass,lowpass,compressed)
 
 reconstruction,itstats = CSC(inputs)
 rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
+clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
 import post_process_grad as ppg
-model = ppg.Model_PostProcess(inputs,rgb_reconstruction)
+model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 import time
