@@ -58,7 +58,7 @@ Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype),tf.cast(0.,dtype))
 
 
 
-for datatype in ['train/','val/','test']:
+for datatype in ['train/','val/','test/']:
     filelist = os.listdir(dataloadpath + datatype)
     for filename in filelist:
         fid = open(dataloadpath + datatype + filename,'rb')

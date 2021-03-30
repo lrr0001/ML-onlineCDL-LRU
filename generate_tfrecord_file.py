@@ -32,7 +32,7 @@ def serialize_example(highpass, lowpass, compressed, raw):
     return example_proto.SerializeToString()
 
 import os
-for datatype in ['train','val','test']:
+for datatype in ['train','val']:
     datasetname = 'BSDS500/'
     datapath = 'data/scratchwork/' + datasetname + 'patches/' + datatype + '/'
     recordpath = 'data/processed/' + datasetname
