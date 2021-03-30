@@ -35,9 +35,10 @@ startOffset1 = (16,16)
 startOffset2 = (16,16)
 # load previous parameters
 
-dataloadpath = 'data/scratchwork/simpleTest/whole/'
-datasavepath = 'data/scratchwork/simpleTest/patches/'
-fid = open('data/processed/simpleTest/param.pckl','rb')
+datasetname = 'BSDS500/'
+dataloadpath = 'data/scratchwork/' + datasetname + 'whole/'
+datasavepath = 'data/scratchwork/' + datasetname + 'patches/'
+fid = open('data/processed/' + datasetname + '/param.pckl','rb')
 python_dict = pkl.load(fid)
 dtype = python_dict['dtype']
 qY = python_dict['qY']
@@ -45,7 +46,7 @@ qUV = python_dict['qUV']
 fid.close()
 python_dict['padding'] = padding
 python_dict['target_size'] = patch_size
-fid = open('data/processed/simpleTest/param.pckl','wb')
+fid = open('data/processed/' + datasetname + 'param.pckl','wb')
 pkl.dump(python_dict,fid)
 fid.close()
 
@@ -57,7 +58,7 @@ Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype),tf.cast(0.,dtype))
 
 
 
-for datatype in ['train/','val/',]:
+for datatype in ['train/','val/','test']:
     filelist = os.listdir(dataloadpath + datatype)
     for filename in filelist:
         fid = open(dataloadpath + datatype + filename,'rb')

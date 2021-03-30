@@ -10,6 +10,8 @@ noi = 20
 lmbda = 0.1
 dtype = 'float64'
 
+datasetname = 'BSDS500/'
+
 # Obtain quantization matrices from chosen quality factor
 import PIL
 import PIL.Image
@@ -33,10 +35,10 @@ smooth_jpeg1 = jrf.Smooth_JPEG(rho,alpha,noi,qY,qUV,lmbda,fftSz1,dtype=dtype)
 smooth_jpeg2 = jrf.Smooth_JPEG(rho,alpha,noi,qY,qUV,lmbda,fftSz2,dtype=dtype)
 Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype = dtype),tf.cast(0.,dtype= dtype))
 # Loop through images
-dataPath = 'data/original/simpleTest/'
+dataPath = 'data/original/' + datasetname
 filelist = os.listdir(dataPath)
-savePath = 'data/scratchwork/simpleTest/whole/'
-for datatype in ['train/','val/',]:
+savePath = 'data/scratchwork/' + datasetname = '/whole/
+for datatype in ['train/','val/','test/']:
     filelist = os.listdir(dataPath + datatype)
     for filename in filelist:
         loadedImg = PIL.Image.open(dataPath + datatype + filename)
@@ -61,6 +63,6 @@ for datatype in ['train/','val/',]:
         fid.close()
 
 
-fid = open('data/processed/simpleTest/param.pckl','wb')
+fid = open('data/processed/' + datasetname + 'param.pckl','wb')
 pkl.dump({'qY': qY,'qUV': qUV,'jpeg_quality': jpeg_quality, 'lmbda': lmbda, 'smoothing_noi': noi,'dtype':dtype},fid)
 fid.close()

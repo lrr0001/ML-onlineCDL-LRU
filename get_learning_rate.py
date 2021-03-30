@@ -20,7 +20,8 @@ step_size = 0.1
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
-experimentpath = 'data/experiment/simpleTest/experiment1/'
+databasename = 'BSDS500/'
+experimentpath = 'data/experiment/' + databasename + 'experiment1/'
 def checkpointfilename(ii):
     return 'checkpoint_epoch' + str(ii) + '.ckpt'
 modelfilename = 'initial_model.ckpt'
