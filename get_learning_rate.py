@@ -16,6 +16,7 @@ lraParam = {'n_components': 4}
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 20
 step_size = 0.1
+num_of_steps = 800
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -136,8 +137,8 @@ log_sha_command = "git log --pretty=format:'%h' -n 1 >> "
 import os
 os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
-smith_callback = smith_lr_search.LearningRateFinder()
-model.fit(x=dataset_batch,epochs=1,steps_per_epoch=8,shuffle=False,callbacks = [smith_callback,])
+smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.005, lrMax=50, steps=num_of_steps - 1)
+model.fit(x=dataset_batch,epochs=1,steps_per_epoch=num_of_steps,shuffle=False,callbacks = [smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
 pkl.dump(smith_callback.output_summary(),fid)
