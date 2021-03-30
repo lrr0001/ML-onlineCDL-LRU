@@ -130,7 +130,7 @@ log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S.lo
 tensorboard_callback = tf.keras.callbacks.TensorBoard(
       log_dir = log_dir,
       histogram_freq = 0,
-      profile_batch = '35,39'
+      profile_batch = '35,38'
 )
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
