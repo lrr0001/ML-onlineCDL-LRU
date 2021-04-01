@@ -5,25 +5,29 @@ import post_process_grad as ppg
 import tf_rewrites as tfr
 import util
 
-class dictionary_object2D(ppg.PostProcess):
-    def __init__(self,fltrSz,fftSz,noc,nof,rho,name,lraParam = {},epsilon=1e-6,*args,dtype=tf.complex64,**kwargs):
-        self.dtype = dtype
+class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
+    def __init__(self,fltrSz,fftSz,noc,nof,rho,objname,n_components,epsilon=1e-6,cmplxdtype=tf.complex128,*args,**kwargs):
+        tf.keras.layers.Layer.__init__(self,name=objname,dtype=cmplxdtype,*args,**kwargs)
         self.fftSz = fftSz
         self.noc = noc
         self.nof = nof
         self.fltrSz = fltrSz
         self.epsilon = epsilon
         self.rho = rho
-        self.lraParam = lraParam
+        self.n_components = n_components
         self.FFT = transf.fft2d_inner(fftSz)
-        Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof,name=name)
-        self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
-        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + 'dmul',**kwargs)
-        self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,name=name + 'qinv',**kwargs)
-        self.get_constrained_D = ifft_trunc_normalize(fltrSz,fftSz,noc,dtype=dtype)
+        Df = self.init_dict(fltrSz=fltrSz,fftSz=fftSz,noc=noc,nof=nof,name=self.name)
+        self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
+        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=self.name + 'dmul',**kwargs)
+        self.qinv = QInv(self.dmul,self.dhmul,noc,nof,rho,*args,dtype=self.dtype,name=self.name + 'qinv',**kwargs)
+        self.get_constrained_D = ifft_trunc_normalize(fltrSz,fftSz,noc,dtype=self.dtype)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
+
+    def get_config(self):
+        return {'fftSz': self.fftSz,'noc': self.noc,'nof':self.nof,'fltrSz': self.fltrSz,'epsilon': self.epsilon,'rho': self.rho,'n_components': self.n_components}
+
     def init_dict(self,fltrSz,fftSz,noc,nof,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Drand = tf.random.normal(shape=(1,) + fltrSz + (noc,nof),dtype=tf.dtypes.as_dtype(self.dtype).real_dtype)
@@ -41,7 +45,7 @@ class dictionary_object2D(ppg.PostProcess):
     def Dhmul(self,inputs):
         return self.dhmul(inputs)
 
-    def Qinv(self,inputs):
+    def call(self,inputs):
         return self.qinv(inputs)
 
 #    def computeR(self,D):
@@ -52,7 +56,7 @@ class dictionary_object2D(ppg.PostProcess):
 
         # compute low rank approximation of the update
         theUpdate = Dnew - self.divide_by_R.D
-        U,V,approx = stack_svd(theUpdate,5,**self.lraParam)
+        U,V,approx = stack_svd(theUpdate,5,n_components = self.n_components)
  
         # Update Spatial-Domain Dictionary and Normalization Factor
         D = self.divide_by_R.D.assign_add(approx)
@@ -114,25 +118,29 @@ class dictionary_object2D(ppg.PostProcess):
         return L
 
 class dictionary_object2D_init(dictionary_object2D):
-    def __init__(self,fftSz,D,rho,name,lraParam = {},epsilon=1e-6,*args,**kwargs):
-        self.dtype = util.complexify_dtype(D.dtype)
+    def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-6,*args,**kwargs):
+        cmplxdtype = util.complexify_dtype(D.dtype)
+        tf.keras.layers.Layer.__init__(self,dtype=cmplxdtype,name=objname,*args,**kwargs)
         self.fftSz = fftSz
         self.noc = D.shape[-2]
         self.nof = D.shape[-1]
         self.fltrSz = D.shape[1:3]
         self.epsilon = epsilon
         self.rho = rho
-        self.lraParam = lraParam
-        self.name = name
+        self.n_components = n_components
         self.FFT = transf.fft2d_inner(self.fftSz)
-        Df = self.init_dict(fftSz=fftSz,D=D,name=name)
+        Df = self.init_dict(fftSz=fftSz,D=D,name=self.name)
 
-        self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=name + '/dhmul',**kwargs)
-        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=name + '/dmul',**kwargs)
-        self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=name + '/qinv',**kwargs)
-        self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,fftSz,self.noc,dtype=self.dtype)
+        self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
+        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
+        self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=self.name + '/qinv',**kwargs)
+        self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,dtype=self.dtype)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
+        
+
+    def get_config(self):
+        return {'fftSz': self.fftSz,'noc': self.noc,'nof':self.nof,'fltrSz': self.fltrSz,'epsilon': self.epsilon,'rho': self.rho,'n_components': self.n_components}
         
     def init_dict(self,fftSz,D,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
@@ -165,12 +173,13 @@ class dictionary_object2D_full(dictionary_object2D):
 
 class dictionary_object2D_init_full(dictionary_object2D_init):
     def _dict_update(self):
-        D = self.get_constrained_D(self.dhmul.Df)  
-        self.divide_by_R.D = self.divide_by_R.D.assign(D)
-        self.divide_by_R.R = self.divide_by_R.R.assign(computeR(D,D.shape[4]))
-        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
-        Df,self.qinv.L = self._update_decomposition()
-        return [self.divide_by_R.D,self.divide_by_R.R,self.dhmul.Df.assign(Df),self.qinv.L]
+        Dnew = self.get_constrained_D(self.dhmul.Df)  
+        D = self.divide_by_R.D.assign(Dnew)
+        R = self.divide_by_R.R.assign(computeR(Dnew,Dnew.shape[4]))
+        Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
+        Df,L = self._update_decomposition()
+        return [D,R,Dfprev,self.dhmul.Df.assign(Df),self.qinv.L.assign(L)]
+        #return [D,R]
 
     def _update_decomposition(self,U=None,V=None):
         if self.qinv.wdbry:
@@ -179,7 +188,6 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         else:
             idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Dfprev,b = self.dhmul.Dfprev,adjoint_a = True))
-        L = self.qinv.L.assign(L)
         return self.dhmul.Dfprev,L
 
 
@@ -244,12 +252,12 @@ class QInv(tf.keras.layers.Layer):
             idMat = tf.linalg.eye(num_rows = nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True))
             self.wdbry = False
-        self.L = tf.Variable(initial_value = L,trainable=False)
+        self.L = tf.Variable(initial_value = L,trainable=False,name='L')
 
 class QInv_auto(tf.keras.layers.Layer):
     def __init__(self,dhmul,rho,wdbry=False,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.Df = tf.Variable(initial_value=dhmul.Df,trainable=True)
+        self.Df = tf.Variable(initial_value=dhmul.Df,trainable=True,name='Dfreq')
         self.rho = rho
     def get_config(self):
         return {'rho': self.rho}
@@ -279,8 +287,8 @@ class DhMul(tf.keras.layers.Layer):
     def __init__(self,Df,*args,dtype=tf.complex64,**kwargs):
         super().__init__(*args,**kwargs)
         with tf.name_scope(self.name):
-            self.Dfprev = tf.Variable(initial_value=tf.identity(Df),trainable=False,dtype=dtype)
-            self.Df = tf.Variable(initial_value=tf.identity(self.Dfprev),trainable=True)
+            self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=dtype,name='Dfreq_previous')
+            self.Df = tf.Variable(initial_value=Df,trainable=True,name='Dfreq')
         self.varname = self.Df.name
     def get_config(self):
         return {'varname': self.varname}
@@ -525,8 +533,8 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
     def __init__(self,D,noc,*args,**kwargs):
         super().__init__(*args,**kwargs)
         with tf.name_scope(self.name):
-            self.D = tf.Variable(initial_value = D,trainable=False)
-            self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False)
+            self.D = tf.Variable(initial_value = D,trainable=False,name='D')
+            self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False,name='R')
     def call(self,inputs):
         R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
         return inputs/R

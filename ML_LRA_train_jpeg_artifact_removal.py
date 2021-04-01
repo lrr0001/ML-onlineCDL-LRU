@@ -11,17 +11,17 @@ rho = 1.
 alpha_init = 1.5
 mu_init = 1.
 b_init = 0.
-lraParam = {'n_components': 4}
+n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
-batch_size = 20
-steps_per_epoch = 540
+batch_size = 2
+steps_per_epoch = 2
 step_size = 0.01
-num_of_epochs = 32
+num_of_epochs = 2
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
 modelname = 'ML_LRA_'
-databasename = 'BSDS500/'
+databasename = 'simpleTest/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
@@ -94,7 +94,7 @@ for (x,y) in dataset_batch:
     break
 
 #   ******** BUILD MODEL ********
-CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],lraParam,noi,noL,cmplxdtype)
+CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
 
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
@@ -132,6 +132,9 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
 
 model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
+for tv in model.trainable_variables:
+    print(tv.name)
+
 model.save_weights(experimentpath + modelfilename)
 sha_name = "SHA.txt"
 log_sha_command = "git log --pretty=format:'%h' -n 1 >> "

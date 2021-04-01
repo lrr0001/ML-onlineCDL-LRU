@@ -1,2 +1,2 @@
-model_checkpoint_path: "saved_dictionary_object2d-full.chkpt"
-all_model_checkpoint_paths: "saved_dictionary_object2d-full.chkpt"
+model_checkpoint_path: "second_saved_dictionary_object2d-weights"
+all_model_checkpoint_paths: "second_saved_dictionary_object2d-weights"

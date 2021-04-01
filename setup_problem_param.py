@@ -5,7 +5,7 @@ import numpy as np
 nof = [32,64]
 noc = 3
 stride = [1]
-fltrSz = ((5,5),(7,7))
+fltrSz = ((5,5),(7,7),)
 noL = len(fltrSz)
 noi =  50
 

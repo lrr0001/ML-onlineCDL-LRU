@@ -32,7 +32,7 @@ class MultiLayerCSC(optmz.ADMM):
         s_LF
         QWs
     '''
-    def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,lraParam,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
+    def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
         self.longitstat = longitstat
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
@@ -40,11 +40,11 @@ class MultiLayerCSC(optmz.ADMM):
         mu_init = tf.cast(mu_init,dtype=cmplxdtype.real_dtype)
         self.noL = noL
         optmz.ADMM.__init__(self=self,rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
-        self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,dtype=dtype)
+        self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,name = 'alpha',dtype=dtype)
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
-        self.initializeLayers(rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype)
+        self.initializeLayers(rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype)
     def get_config(self):
         config_dict = {'complex_dtype': self.cmplxdtype,
                        'num_of_Layers': self.noL,
@@ -56,13 +56,13 @@ class MultiLayerCSC(optmz.ADMM):
                        'record_iteration_stats': self.longitstat}
         return config_dict
 
-    def initializeLayers(self,rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,lraParam,cmplxdtype):
+    def initializeLayers(self,rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype):
         self.strides = strides
         self.dictObj = []
         self.updateX_layer = []
 
         for ii in range(noL):
-            self.dictObj.append(self.build_dict_obj(fftSz[ii],D[ii],rho,lraParam,cmplxdtype,ii))
+            self.dictObj.append(self.build_dict_obj(fftSz[ii],D[ii],rho,n_components,cmplxdtype,ii))
             self.updateX_layer.append(GetNextIterX(tf.cast(rho,dtype=cmplxdtype),self.dictObj[ii],dtype=cmplxdtype))
 
         self.FFT,self.IFFT,self.FFT_factor = self.build_fft_layers(fftSz,noL)
@@ -102,11 +102,11 @@ class MultiLayerCSC(optmz.ADMM):
             FFT_factor.append(np.prod(fftSz[ii]))
         return FFT,IFFT,FFT_factor
 
-    def build_dict_obj(self,fftSz,D,rho,lraParam,cmplxdtype,layer):
+    def build_dict_obj(self,fftSz,D,rho,n_components,cmplxdtype,layer):
         if layer == 0:
-            return fctr.dictionary_object2D_init_full(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(layer),lraParam = lraParam)
+            return fctr.dictionary_object2D_init_full(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components = n_components)
         else:
-            return fctr.dictionary_object2D_init(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),name='dict_layer' + str(layer),lraParam=lraParam)
+            return fctr.dictionary_object2D_init(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components=n_components)
 
     def build_updateZ_layer(self,fftSz,nof,rho,mu_init,munext,dictObj,nextdictObj,b_init,cmplxdtype,strides,layer):
         if strides == 2:
@@ -222,7 +222,7 @@ class MultiLayerCSC(optmz.ADMM):
         #y,By = self.ystep(x,u,Ax_relaxed,negC)
         #v,z = y
         #s_LF,QWs = negC
-        Dx = self.IFFT[0](self.dictObj[0].dmul(x[0]))
+        Dx = self.IFFT[0](tf.matmul(a=self.dictObj[0].dhmul.Df,b=x[0]))
         return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,itstats)
 
     def get_b_shape(self,fftSz,M):
@@ -588,7 +588,7 @@ class GetNextIterX(tf.keras.layers.Layer):
         self.rho = rho
     def call(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        return self.dictObj.qinv(self.dictObj.dhmul(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))
+        return self.dictObj(self.dictObj.dhmul(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))
     def get_config(self):
         return {'rho': self.rho}
 
@@ -655,12 +655,13 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         #super().__init__(*args,**kwargs)
         tf.keras.layers.Layer.__init__(self,*args,**kwargs)
         self.rho = rho
-        self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        
         self.mu_nextlayer = mu_nextlayer
         self.dictObj = dictObj
         self.dictObj_nextlayer = dictObj_nextlayer
         with tf.name_scope(self.name):
-            self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
+            self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
         self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
@@ -713,16 +714,20 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
     def __init__(self,rho,ifft,mu_init,dictObj,b_init,*args,**kwargs):
         #super().__init__(*args,**kwargs)
         tf.keras.layers.Layer.__init__(self,*args,**kwargs)
-        self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        
         self.dictObj = dictObj
         with tf.name_scope(self.name):
-            self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype) # Is this an active design decision to avoid dependence on mu?
+            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
+            self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
         self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
+        ppg.PostProcess.add_update(self.mu.name,self._update_mu)
 
     def _update_b(self):
         return [self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b)),]
+    def _update_mu(self):
+        return [self.mu.assign(tf.where(self.mu < 1e-3,tf.cast(1e-3,dtype=tf.as_dtype(self.dtype).real_dtype),self.mu))]
 
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
