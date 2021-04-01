@@ -21,7 +21,7 @@ num_of_epochs = 3
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
 modelname = 'ML_LRA_'
-databasename = 'simpleTest/'
+databasename = 'BSDS500/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
