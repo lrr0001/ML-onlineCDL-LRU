@@ -121,7 +121,8 @@ print(len(times))
 epoch = 0
 model.load_weights(experimentpath + checkpointfilename.format(epoch=epoch + 1))
 for tv in model.trainable_variables:
-    print(tv.name)
+    if len(tv.shape) < 2:
+        print(tv)
 #results = []
 #model.load_weights(experimentpath + modelfilename)
 #results.append(model.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
