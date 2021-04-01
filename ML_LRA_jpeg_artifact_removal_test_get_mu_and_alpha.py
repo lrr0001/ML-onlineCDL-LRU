@@ -118,7 +118,7 @@ fid = open(experimentpath + timesname,'rb')
 times = pkl.load(fid)
 fid.close()
 print(len(times))
-ephoch = 0
+epoch = 0
 model.load_weights(experimentpath + checkpointfilename.format(epoch=epoch + 1))
 for tv in model.trainable_variables:
     print(tv.name)
