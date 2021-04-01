@@ -211,23 +211,25 @@ class QInv(tf.keras.layers.Layer):
 
             @tf.custom_gradient
             def gradient_trick(y,Df):
+                #def grad(dg):
+                #    halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
+                #    ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+                #    if self.wdbry:
+                #        Dhy = self.dhmul(y)
+                #        DhyH = util.conj_tp(Dhy)
+                #        Dhainvdg = self.dhmul(ainvdg)
+                #        DhainvdgH = util.conj_tp(Dhainvdg)
+                #        gradD = -ainvdg*DhyH - y*DhainvdgH
+                #    else:
+                #        Dy = self.dmul(y)
+                #        Dainvdg = self.dmul(ainvdg)
+                #        yH = util.conj_tp(y)
+                #        ainvdgH = util.conj_tp(ainvdg)
+                #        gradD = -Dy*ainvdgH - Dainvdg*yH
+                #    return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
+                #return tf.identity(y),grad
                 def grad(dg):
-                    halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
-                    ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
-                    if self.wdbry:
-                        Dhy = self.dhmul(y)
-                        DhyH = util.conj_tp(Dhy)
-                        Dhainvdg = self.dhmul(ainvdg)
-                        DhainvdgH = util.conj_tp(Dhainvdg)
-                        gradD = -ainvdg*DhyH - y*DhainvdgH
-                    else:
-                        Dy = self.dmul(y)
-                        Dainvdg = self.dmul(ainvdg)
-                        yH = util.conj_tp(y)
-                        ainvdgH = util.conj_tp(ainvdg)
-                        gradD = -Dy*ainvdgH - Dainvdg*yH
-                    return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
-                return tf.identity(y),grad
+                    return (tf.identity(dg),Df)
             return gradient_trick(output,self.dhmul.Df)
 
         self.solve_inverse = lambda x: solve_inverse(x)
