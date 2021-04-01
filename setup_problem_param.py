@@ -7,7 +7,7 @@ noc = 3
 stride = [1]
 fltrSz = ((5,5),(7,7),)
 noL = len(fltrSz)
-noi =  50
+noi =  2
 
 D = []
 D_first = np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64')
