@@ -230,6 +230,7 @@ class QInv(tf.keras.layers.Layer):
                 #return tf.identity(y),grad
                 def grad(dg):
                     return (tf.identity(dg),Df)
+                return tf.identity(y),grad
             return gradient_trick(output,self.dhmul.Df)
 
         self.solve_inverse = lambda x: solve_inverse(x)
