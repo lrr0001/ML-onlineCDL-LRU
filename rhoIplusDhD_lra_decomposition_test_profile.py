@@ -31,7 +31,8 @@ y = rho*xi + tf.linalg.matmul(B,tf.linalg.matmul(B,xi),adjoint_a=True)
 z2 = AInv2(y)
 
 #my_model = ppg.Model_PostProcess(xi,z)
-my_model2 = ppg.Model_PostProcess(xi,z2)
+#my_model2 = ppg.Model_PostProcess(xi,z2)
+my_model2 = tf.keras.Model(xi,z2)
 
 #my_model.compile(optimizer=tf.keras.optimizers.SGD(0.001),loss=tf.keras.losses.MSE,run_eagerly=False)
 my_model2.compile(optimizer=tf.keras.optimizers.SGD(0.001),loss=tf.keras.losses.MSE,run_eagerly=False)
