@@ -123,7 +123,7 @@ model.load_weights(experimentpath + checkpointfilename.format(epoch=epoch + 1))
 for tv in model.trainable_variables:
     if len(tv.shape) < 2:
         print(tv)
-print(ppg.update.keys())
+print(ppg.PostProcess.update.keys())
 #results = []
 #model.load_weights(experimentpath + modelfilename)
 #results.append(model.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
