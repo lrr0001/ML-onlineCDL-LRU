@@ -136,7 +136,7 @@ class dictionary_object2D_init(dictionary_object2D):
         self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=self.name + '/qinv',**kwargs)
         self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,dtype=self.dtype)
 
-        ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
+        #ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
 
     def get_config(self):
