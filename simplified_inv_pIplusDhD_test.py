@@ -64,8 +64,8 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         with tf.name_scope(self.name):
             self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=dtype,name='Dfreq_previous')
             self.Df = tf.Variable(initial_value=Df,trainable=True,name='Dfreq')
-        self.dhmul = DhMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
-        self.dmul = DMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
+        #self.dhmul = DhMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
+        #self.dmul = DMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
         #self.qinv = QInv_Tight_Frame(self.dmul,self.dhmul,rho,*args,dtype=self.dtype,name = self.name + '/qinv',**kwargs)
     def init_dict(self,fftSz,D,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
@@ -74,7 +74,7 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
         return self.FFT(self.divide_by_R.D)
     def call(self,inputs):
-        return (1./self.rho)*(inputs - self.dhmul(self.dmul(inputs))/(self.rho + 1.))#self.qinv(inputs)
+        return (1./self.rho)*(inputs - tf.matmul(a=self.Df,b=tf.matmul(a=self.Df,b=inputs),adjoint_a=True)/(self.rho + 1.))#self.qinv(inputs)
 
 
 import numpy as np
