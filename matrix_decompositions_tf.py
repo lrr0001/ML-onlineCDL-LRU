@@ -191,6 +191,41 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         return self.dhmul.Dfprev,L
 
 
+@tf.custom_gradient
+def _gradient_trick(y,Df):
+    #def grad(dg):
+    #    halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
+    #    ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+    #    if self.wdbry:
+    #        Dhy = self.dhmul(y)
+    #        DhyH = util.conj_tp(Dhy)
+    #        Dhainvdg = self.dhmul(ainvdg)
+    #        DhainvdgH = util.conj_tp(Dhainvdg)
+    #        gradD = -ainvdg*DhyH - y*DhainvdgH
+    #    else:
+    #        Dy = self.dmul(y)
+    #        Dainvdg = self.dmul(ainvdg)
+    #        yH = util.conj_tp(y)
+    #        ainvdgH = util.conj_tp(ainvdg)
+    #        gradD = -Dy*ainvdgH - Dainvdg*yH
+    #    return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
+    #return tf.identity(y),grad
+    def grad(dg):
+        return (tf.identity(dg),Df)
+    return tf.identity(y),grad
+
+
+class Solve_Inverse(tf.keras.layers.Layer):
+    # I want auto-differentiation of the input, but not of the weights.
+    # The solution? Create a pass-through "gradient layer" that computes the gradient for the weights.
+    def __init__(self,dhmul,*args,**kwargs):
+        self.dhmul = dhmul
+        super().__init__(*args,**kwargs)
+
+    def call(self, x):
+        halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
+        output = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+        return _gradient_trick(output,self.dhmul.Df)
 
 class QInv(tf.keras.layers.Layer):
     def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
@@ -201,39 +236,7 @@ class QInv(tf.keras.layers.Layer):
         self.rho = rho
         self.init_chol(noc,nof)
 
-
-        def solve_inverse(x):
-            # I want auto-differentiation of the input, but not of the weights.
-            # The solution? Create a pass-through "gradient layer" that computes the gradient for the weights.
- 
-            halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
-            output = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
-
-            @tf.custom_gradient
-            def gradient_trick(y,Df):
-                #def grad(dg):
-                #    halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
-                #    ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
-                #    if self.wdbry:
-                #        Dhy = self.dhmul(y)
-                #        DhyH = util.conj_tp(Dhy)
-                #        Dhainvdg = self.dhmul(ainvdg)
-                #        DhainvdgH = util.conj_tp(Dhainvdg)
-                #        gradD = -ainvdg*DhyH - y*DhainvdgH
-                #    else:
-                #        Dy = self.dmul(y)
-                #        Dainvdg = self.dmul(ainvdg)
-                #        yH = util.conj_tp(y)
-                #        ainvdgH = util.conj_tp(ainvdg)
-                #        gradD = -Dy*ainvdgH - Dainvdg*yH
-                #    return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
-                #return tf.identity(y),grad
-                def grad(dg):
-                    return (tf.identity(dg),Df)
-                return tf.identity(y),grad
-            return gradient_trick(output,self.dhmul.Df)
-
-        self.solve_inverse = lambda x: solve_inverse(x)
+        self.solve_inverse = Solve_Inverse(dhmul,*args,**kwargs)
 
     def get_config(self):
         return {'rho': self.rho}
