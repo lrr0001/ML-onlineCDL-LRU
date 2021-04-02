@@ -62,7 +62,7 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         self.rho = rho
         self.n_components = n_components
         self.FFT = transf.fft2d_inner(self.fftSz)
-        Df = init_dict(fftSz=fftSz,D=D,name=self.name)
+        Df = self.init_dict(fftSz=fftSz,D=D,name=self.name)
 
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
