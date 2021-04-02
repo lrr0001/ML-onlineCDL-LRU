@@ -52,7 +52,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
 #        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
 
     def _dict_update(self):
-        Df = tf.math.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
         Dnew = self.get_constrained_D(Df)
 
         # compute low rank approximation of the update
