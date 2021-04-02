@@ -230,7 +230,8 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
 class Solve_Inverse(tf.keras.layers.Layer):
     # I want auto-differentiation of the input, but not of the weights.
     # The solution? Create a pass-through "gradient layer" that computes the gradient for the weights.
-    def __init__(self,dhmul,L,wdbry,*args,**kwargs):
+    def __init__(self,dmul,dhmul,L,wdbry,*args,**kwargs):
+        self.dmul = dmul
         self.dhmul = dhmul
         self.L = L
         self.wdbry = wdbry
@@ -254,6 +255,8 @@ class Solve_Inverse(tf.keras.layers.Layer):
                 gradD = -Dy*ainvdgH - Dainvdg*yH
             return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
         return tf.identity(y),grad
+    def get_config(self):
+        return {'wdbry': self.wdbry}
     def call(self, x):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
         halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
@@ -269,7 +272,7 @@ class QInv(tf.keras.layers.Layer):
         self.rho = rho
         self.init_chol(noc,nof)
 
-        self.solve_inverse = Solve_Inverse(dhmul = dhmul,L = self.L,wdbry=self.wdbry,*args,**kwargs)
+        self.solve_inverse = Solve_Inverse(dmul = dmul,dhmul = dhmul,L = self.L,wdbry=self.wdbry,*args,**kwargs)
 
     def get_config(self):
         return {'rho': self.rho}
