@@ -72,8 +72,8 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),self.qinv.L.assign(L)]
 
     def _update_decomposition(self,U,V,Dfprev,L):
-        #L = self._rank1_updates(U,V,L)
-        #L,asVec = self._rank2_updates(U,V,Dfprev,L)
+        L = self._rank1_updates(U,V,L)
+        L,asVec = self._rank2_updates(U,V,Dfprev,L)
         # Update dictionary
         #with tf.control_dependencies([asVec]):
         #Dfprev = self.dhmul.Dfprev.assign_add(U @ util.conj_tp(V))
