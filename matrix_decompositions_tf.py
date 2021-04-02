@@ -187,7 +187,6 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         D = self.divide_by_R.D.assign(Dnew)
         R = self.divide_by_R.R.assign(computeR(Dnew,Dnew.shape[4]))
         Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
-        print('This code actually runs sometimes.')
         with tf.control_dependencies([Dfprev]):
             Df,L = self._update_decomposition()
         Dfr = self.dhmul.Dfreal.assign(tf.math.real(Df))
