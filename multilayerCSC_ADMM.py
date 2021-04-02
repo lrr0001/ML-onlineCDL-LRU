@@ -167,7 +167,7 @@ class MultiLayerCSC(optmz.ADMM):
         primal_err.append(currPrimalErr)
         s_LF,QWs = negC
         comprssd_s = self.Wt(QWs)
-        Dx = self.dictObj[0].dmul(x[0])
+        Dx = self.dictObj[0].dmul.freezeD(x[0])
         Dx_real = tf.squeeze(self.IFFT[0](Dx),axis=-1)
         Dx_cropped = self.cropAndMerge.crop(Dx_real)
         currCmprssdReconResid = comprssd_s - Dx_cropped
@@ -217,7 +217,13 @@ class MultiLayerCSC(optmz.ADMM):
 
     def get_output(self,s,y,u,By,negC,itstats):
         s_LF,QWs = negC
-        x,Ax = self.xstep(y,u,By,negC)
+        for layer in range(self.noL - 1,0,-1):
+            x,Ax = self.xstep_trunc(y,u,By,negC,layer)
+            Ax_relaxed = self.relax_trunc(Ax,By,negC,layer)
+            y,By = self.ystep_trunc(x,u,Ax_relaxed,negC,layer,frozen=False)
+            u = self.ustep_trunc(u,Ax_relaxed,By,negC,layer)
+
+        x,Ax = self.xstep_trunc(y,u,By,negC,layer=0)
         #Ax_relaxed = self.relax(Ax,By,negC)
         #y,By = self.ystep(x,u,Ax_relaxed,negC)
         #v,z = y
@@ -278,27 +284,30 @@ class MultiLayerCSC(optmz.ADMM):
 
     # High-level Update Functions for each iteration (x,y,u,Ax,By)
     def xstep(self,y,u,By,negC):
-        v,z = y
-        eta,gamma = u
-        x = []
-        x.append(self.updateX(z_prevlayer=v,z=z[0],gamma_scaled = gamma[0],layer=0))
-        for ii in range(1,self.noL):
-            if self.strides[ii - 1] == 2:
-                x.append(self.updateX(z_prevlayer=util.freq_downsample(z[ii - 1]),z = z[ii],gamma_scaled = gamma[ii],layer=ii))
-            else:
-                x.append(self.updateX(z_prevlayer=z[ii - 1],z = z[ii],gamma_scaled = gamma[ii],layer=ii))
-        return x,(0.,x)
+        return self.xstep_trunc(y,u,By,negC,layer=self.noL - 1)
+        #v,z = y
+        #eta,gamma = u
+        #x = []
+        #x.append(self.updateX(z_prevlayer=v,z=z[0],gamma_scaled = gamma[0],layer=0))
+        #for ii in range(1,self.noL):
+        #    if self.strides[ii - 1] == 2:
+        #        x.append(self.updateX(z_prevlayer=util.freq_downsample(z[ii - 1]),z = z[ii],gamma_scaled = gamma[ii],layer=ii))
+        #    else:
+        #        x.append(self.updateX(z_prevlayer=z[ii - 1],z = z[ii],gamma_scaled = gamma[ii],layer=ii))
+        #return x,(0.,x)
     def relax(self,Ax,By,negC):
-        Azero,x = Ax
-        s_LF,QWs = negC
-        rootmux = []
-        Bv,z = By
-        for ii in range(self.noL):
-            rootmux.append(self.relax_layers(x[ii],z[ii],ii))
+        return self.relax_trunc(Ax,By,negC,layer=self.noL)
+        #Azero,x = Ax
+        #s_LF,QWs = negC
+        #rootmux = []
+        #Bv,z = By
+        #for ii in range(self.noL):
+        #    rootmux.append(self.relax_layers(x[ii],z[ii],ii))
         #AzeroplusC = self.relax_zero(Bv,QWs)
-        AzeroplusC = None
-        return AzeroplusC,rootmux
+        #AzeroplusC = None
+        #return AzeroplusC,rootmux
     def ystep(self,x,u,Ax_relaxed,negC):
+        # It is good practice to avoid code redundancy, but here the last layer is distinct from ystep_trunc. y_step trunc does not freeze the dictionary weights and also does not use updateZlast. If-else logic could resolve these distinctions, but I find it clearer to leave these as two separate functions.
         eta,gamma = u
         AzeroplusC,Ax_layers = Ax_relaxed
         z = []
@@ -310,10 +319,54 @@ class MultiLayerCSC(optmz.ADMM):
         By = (Bv,z)
         return y,By
     def ustep(self,u,Ax_relaxed,By,negC):
+        return self.ustep_trunc(u,Ax_relaxed,By,negC,layer=self.noL)
+        #eta,gamma = u
+        #AzeroplusC,Ax_layers = Ax_relaxed
+        #Bv,z = By
+        #for ii in range(self.noL):
+        #    gamma[ii] = self.updateGamma(gamma[ii],z[ii],Ax_layers[ii],ii)
+        #s_LF,QWs = negC
+        #eta = self.updateEta(eta,Bv,QWs)
+        #return eta,gamma
+
+    def xstep_trunc(self,y,u,By,negC,layer):
+        v,z = y
+        eta,gamma = u
+        x = []
+        x.append(self.updateX(z_prevlayer=v,z=z[0],gamma_scaled = gamma[0],layer=0))
+        for ii in range(1,layer + 1):
+            if self.strides[ii - 1] == 2:
+                x.append(self.updateX(z_prevlayer=util.freq_downsample(z[ii - 1]),z = z[ii],gamma_scaled = gamma[ii],layer=ii))
+            else:
+                x.append(self.updateX(z_prevlayer=z[ii - 1],z = z[ii],gamma_scaled = gamma[ii],layer=ii))
+        return x,(0.,x)
+    def relax_trunc(self,Ax,By,negC,layer):
+        Azero,x = Ax
+        s_LF,QWs = negC
+        rootmux = []
+        Bv,z = By
+        for ii in range(layer):
+            rootmux.append(self.relax_layers(x[ii],z[ii],ii))
+        #AzeroplusC = self.relax_zero(Bv,QWs)
+        AzeroplusC = None
+        return AzeroplusC,rootmux
+    def ystep_trunc(self,x,u,Ax_relaxed,negC,layer,frozen=True):
+        eta,gamma = u
+        AzeroplusC,Ax_layers = Ax_relaxed
+        z = []
+        for ii in range(layer - 1):
+            z.append(self.updateZ(x_nextlayer=x[ii + 1],Ax_relaxed=Ax_layers[ii],gamma_scaled=gamma[ii],layer=ii))
+        z.append(self.updateZ(x_nextlayer=x[layer],Ax_relaxed=Ax_layers[layer - 1],gamma_scaled=gamma[layer - 1],layer=layer - 1,frozen=frozen))
+        #z.append(self.updateZ_last(Ax_relaxed=Ax_layers[self.noL - 1],gamma_scaled=gamma[self.noL - 1]))
+        v,Bv = self.updateV(x[0],eta,negC)
+        y = (v,z)
+        By = (Bv,z)
+        return y,By
+    def ustep_trunc(self,u,Ax_relaxed,By,negC,layer):
         eta,gamma = u
         AzeroplusC,Ax_layers = Ax_relaxed
         Bv,z = By
-        for ii in range(self.noL):
+        for ii in range(layer):
             gamma[ii] = self.updateGamma(gamma[ii],z[ii],Ax_layers[ii],ii)
         s_LF,QWs = negC
         eta = self.updateEta(eta,Bv,QWs)
@@ -340,7 +393,7 @@ class MultiLayerCSC(optmz.ADMM):
                 mu = self.updateZ_layer[0].mu
         else:
             mu = self.updateZ_lastlayer.mu
-        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul(x[0]))/self.FFT_factor[0]
+        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(x[0]))/self.FFT_factor[0]
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 if self.strides[layer] == 2:
@@ -351,9 +404,9 @@ class MultiLayerCSC(optmz.ADMM):
             else:
                 mu = self.updateZ_lastlayer.mu
             if self.strides[layer - 1] == 2:
-                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul(x[layer]))/self.FFT_factor[layer]
+                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer]
             else:
-                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul(x[layer]))/self.FFT_factor[layer]
+                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer]
         return reconErr
     def penaltyErrors(self,y):
         v,z = y
@@ -420,14 +473,14 @@ class MultiLayerCSC(optmz.ADMM):
     # Low-level Initialization Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
     def xinit(self,xprev,layer):
         if layer == 0:
-            Dhx = self.dictObj[layer].dhmul(xprev)
+            Dhx = self.dictObj[layer].dhmul.freezeD(xprev)
         else:
             Rprev = util.rotate_dims_left(self.dictObj[layer - 1].divide_by_R.R,5) # Fix this later, can be implemented more efficiently
-            Dhx = self.dictObj[layer].dhmul(xprev*tf.cast(Rprev,self.cmplxdtype))
+            Dhx = self.dictObj[layer].dhmul.freezeD(xprev*tf.cast(Rprev,self.cmplxdtype))
         Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].divide_by_R.R),5) # Fix this later, can be implemented more efficiently
         return Dhx/tf.cast(Rsquared,self.cmplxdtype)
     def vinit(self,x_0,negC):
-        Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
+        Dx = self.IFFT[0](self.dictObj[0].dmul.freezeD(x_0))
         Dx = tf.squeeze(Dx,axis=-1)
         croppedDx = self.cropAndMerge.crop(Dx)
         s_LF,QWs = negC
@@ -447,12 +500,18 @@ class MultiLayerCSC(optmz.ADMM):
 
 
     # Low-level Update Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
-    def updateX(self,z_prevlayer,z,gamma_scaled,layer):
+    def updateX(self,z_prevlayer,z,gamma_scaled,layer,frozen=True):
         if layer == self.noL - 1:
-            return self.updateX_layer[layer]((z_prevlayer,z,gamma_scaled))
+            if frozen:
+                return self.updateX_layer[layer]((z_prevlayer,z,gamma_scaled))
+            else:
+                return self.updateX_layer[layer].thawD((z_prevlayer,z,gamma_scaled))
         else:
             #R = tf.cast(util.rotate_dims_left(self.dictObj[layer].R,5),dtype=self.cmplxdtype)
-            return self.updateX_layer[layer]((z_prevlayer,self.dictObj[layer].divide_by_R(z),gamma_scaled))
+            if frozen:
+                return self.updateX_layer[layer]((z_prevlayer,self.dictObj[layer].divide_by_R(z),gamma_scaled))
+            else:
+                return self.updateX_layer[layer].thawD((z_prevlayer,self.dictObj[layer].divide_by_R(z),gamma_scaled))
     def relax_layers(self,x,z,layer):
         if layer < self.noL - 1:
             #R = tf.cast(util.rotate_dims_left(self.dictObj[layer].R,5),dtype=self.cmplxdtype)
@@ -463,8 +522,11 @@ class MultiLayerCSC(optmz.ADMM):
     def relax_zero(self,Bv,negC):
         raise NotImplementedError
         return self.relax0((negC,Bv))
-    def updateV(self,x_0,eta_over_rho,negC):
-        Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
+    def updateV(self,x_0,eta_over_rho,negC,frozen=True):
+        if frozen:
+            Dx = self.IFFT[0](self.dictObj[0].dmul.freezeD(x_0))
+        else:
+            Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
         # It might be helpful to build an object to couple cropping and padding so that it is never messed up. Best if this is done outside, because the cropping function can be used to get QWs.
         Dx = tf.squeeze(Dx,axis=-1) # add tf.crop_to_bounding_box here.
         s_LF,QWs = negC
@@ -472,19 +534,25 @@ class MultiLayerCSC(optmz.ADMM):
         v = self.cropAndMerge.merge((vpluss_LF - s_LF,Dx))
         v = util.addDim(v)
         return self.FFT[0](v),Bv # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
-    def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
+    def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer,frozen=True):
         assert(layer < self.noL - 1)
         if self.strides[layer] == 2:
-            return self.updateZ_downsample(x_nextlayer,Ax_relaxed,gamma_scaled,layer)
-        Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
+            return self.updateZ_downsample(x_nextlayer,Ax_relaxed,gamma_scaled,layer,frozen)
+        if frozen:
+            Dx = self.dictObj[layer + 1].dmul.freezeD(x_nextlayer)
+        else:
+            Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
         #z = self.updateZ_layer[layer]((self.IFFT[layer](Dx),self.IFFT[layer](Ax_relaxed),self.IFFT[layer](gamma_scaled)))
         z = self.updateZ_layer[layer]((Dx,Ax_relaxed + gamma_scaled))
         return self.FFT[layer](z)
-    def updateZ_downsample(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer):
+    def updateZ_downsample(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer,frozen=True):
         assert(layer < self.noL - 1)
 
         # downsampled
-        Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
+        if frozen:
+            Dx = self.dictObj[layer + 1].dmul.freezeD(x_nextlayer)
+        else:
+            Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
         #Ax_relaxed_spatial = self.IFFT[layer](Ax_relaxed)
         #gamma_spatial = self.IFFT[layer](gamma_scaled)
         #Dx_spatial = self.IFFT[layer + 1](Dx)
@@ -587,6 +655,9 @@ class GetNextIterX(tf.keras.layers.Layer):
         self.dictObj = dictObj
         self.rho = rho
     def call(self,inputs):
+        z_prevlayer,z_over_R,gamma_scaled = inputs
+        return self.dictObj.freezeD(self.dictObj.dhmul.freezeD(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))
+    def thawD(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
         return self.dictObj(self.dictObj.dhmul(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))
     def get_config(self):

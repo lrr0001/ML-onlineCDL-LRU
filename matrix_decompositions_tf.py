@@ -48,6 +48,9 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
     def call(self,inputs):
         return self.qinv(inputs)
 
+    def freezeD(self,inputs):
+        return self.qinv.freezeD(inputs)
+
 #    def computeR(self,D):
 #        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
 
@@ -155,9 +158,6 @@ class dictionary_object2D_init(dictionary_object2D):
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
         return self.FFT(self.divide_by_R.D)
 
-    def call(self,inputs):
-        return self.qinv(inputs)
-
 
 
 class dictionary_object2D_full(dictionary_object2D):
@@ -260,9 +260,11 @@ class Solve_Inverse(tf.keras.layers.Layer):
         return {'wdbry': self.wdbry}
     def call(self, x):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
-        halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
-        output = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+        output = self.freezeD(x)
         return self.gradient_trick(output,Df)
+    def freezeD(self,x):
+        halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
+        return tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
 
 class QInv(tf.keras.layers.Layer):
     def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
@@ -285,6 +287,14 @@ class QInv(tf.keras.layers.Layer):
             return (inputs - self.dhmul(z))/self.rho
         else:
             return self.solve_inverse(inputs)
+
+    def freezeD(self, inputs):
+        if self.wdbry:
+            y = self.dmul.freezeD(inputs)
+            z = self.solve_inverse.freezeD(y)
+            return (inputs - self.dhmul.freezeD(z))/self.rho
+        else:
+            return self.solve_inverse.freezeD(inputs)
 
     def init_chol(self,noc,nof):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
@@ -344,6 +354,10 @@ class DMul(tf.keras.layers.Layer):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
         return tf.matmul(a=Df,b=inputs)
 
+    def freezeD(self, inputs):
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        return tf.matmul(a=tf.stop_gradient(Df),b=inputs)
+
 
 class DhMul(tf.keras.layers.Layer):
     def __init__(self,Df,*args,dtype=tf.complex64,**kwargs):
@@ -359,6 +373,10 @@ class DhMul(tf.keras.layers.Layer):
     def call(self, inputs):
         Df = tf.complex(self.Dfreal,self.Dfimag)
         return tf.matmul(a=Df,b=inputs,adjoint_a=True)
+
+    def freezeD(self, inputs):
+        Df = tf.complex(self.Dfreal,self.Dfimag)
+        return tf.matmul(a=tf.stop_gradient(Df),b=inputs,adjoint_a=True)
 
 
 def get_lowrank_approx(A,*args,**kwargs):
