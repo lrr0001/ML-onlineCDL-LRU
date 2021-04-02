@@ -222,7 +222,7 @@ class MultiLayerCSC(optmz.ADMM):
         #y,By = self.ystep(x,u,Ax_relaxed,negC)
         #v,z = y
         #s_LF,QWs = negC
-        Dx = self.IFFT[0](tf.matmul(a=self.dictObj[0].dhmul.Df,b=x[0]))
+        Dx = self.IFFT[0](self.dictObj[0].dmul(b=x[0]))
         return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,itstats)
 
     def get_b_shape(self,fftSz,M):
