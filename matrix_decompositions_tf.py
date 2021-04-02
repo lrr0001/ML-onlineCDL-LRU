@@ -133,7 +133,8 @@ class dictionary_object2D_init(dictionary_object2D):
 
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
-        self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=self.name + '/qinv',**kwargs)
+        #self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=self.name + '/qinv',**kwargs)
+        self.qinv = QInv_Tight_Frame(self.dmul,self.dhmul,rho,*args,dtype=self.dtype,name = self.name + '/qinv',**kwargs)
         self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,dtype=self.dtype)
 
         #ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
@@ -260,6 +261,22 @@ class QInv(tf.keras.layers.Layer):
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True))
             self.wdbry = False
         self.L = tf.Variable(initial_value = L,trainable=False,name='L')
+
+class QInv_Tight_Frame(tf.keras.layers.Layer):
+    def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
+        # layers are included in the inputs for the purposes of sharing weights.
+        super().__init__(*args,**kwargs)
+        self.dmul = dmul
+        self.dhmul = dhmul
+        self.rho = rho
+
+    def get_config(self):
+        return {'rho': self.rho}
+
+    def call(self, inputs):
+        return (1./self.rho)*(inputs - self.dhmul(self.dmul(inputs))/(self.rho + 1.)) 
+
+
 
 class QInv_auto(tf.keras.layers.Layer):
     def __init__(self,dhmul,rho,wdbry=False,*args,**kwargs):
