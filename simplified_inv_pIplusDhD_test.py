@@ -64,7 +64,7 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         with tf.name_scope(self.name):
             self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=dtype,name='Dfreq_previous')
             self.Dfreal = tf.Variable(initial_value=tf.math.real(Df),trainable=True,name='Dfreq_real')
-            self.DFimag = tf.Variable(initial_value=tf.math.imag(DF),trainable=True,name='Dfreq_imag')
+            self.DFimag = tf.Variable(initial_value=tf.math.imag(Df),trainable=True,name='Dfreq_imag')
         #self.dhmul = DhMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
         #self.dmul = DMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
         #self.qinv = QInv_Tight_Frame(self.dmul,self.dhmul,rho,*args,dtype=self.dtype,name = self.name + '/qinv',**kwargs)
