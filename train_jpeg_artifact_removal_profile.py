@@ -130,11 +130,11 @@ class TimeHistory(tf.keras.callbacks.Callback):
     def on_epoch_end(self, batch, logs={}):
         self.train_times.append(time.time() - self.epoch_time_start)
 log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S.log")
-#tensorboard_callback = tf.keras.callbacks.TensorBoard(
-#      log_dir = log_dir,
-#      histogram_freq = 1,
+tensorboard_callback = tf.keras.callbacks.TensorBoard(
+      log_dir = log_dir,
+      histogram_freq = 1#,
 #      profile_batch = '2,5'
-#)
+)
 
 model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
 for tv in model.trainable_variables:
@@ -148,6 +148,6 @@ time_callback = TimeHistory()
 for ii in range(num_of_saves):
     if ii == 1:
         with tf.profiler.experimental.Profile(log_dir):
-            model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [time_callback,])
+            model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [time_callback,tensorboard_callback])
     else:
         model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [time_callback,])
