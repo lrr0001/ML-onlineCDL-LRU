@@ -37,6 +37,9 @@ class DhMul(tf.keras.layers.Layer):
     def call(self, inputs):
         return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
 
+def computeR(D,noc):
+    return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
+
 class Coef_Divide_By_R(tf.keras.layers.Layer):
     def __init__(self,D,noc,*args,**kwargs):
         super().__init__(*args,**kwargs)
