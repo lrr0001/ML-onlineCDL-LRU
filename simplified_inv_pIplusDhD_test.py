@@ -35,15 +35,15 @@ class DhMul(tf.keras.layers.Layer):
 def computeR(D,noc):
     return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
 
-class Coef_Divide_By_R(tf.keras.layers.Layer):
-    def __init__(self,D,noc,*args,**kwargs):
-        super().__init__(*args,**kwargs)
-        with tf.name_scope(self.name):
-            self.D = tf.Variable(initial_value = D,trainable=False,name='D')
-            self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False,name='R')
-    def call(self,inputs):
-        R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
-        return inputs/R
+#class Coef_Divide_By_R(tf.keras.layers.Layer):
+#    def __init__(self,D,noc,*args,**kwargs):
+#        super().__init__(*args,**kwargs)
+#        with tf.name_scope(self.name):
+#            self.D = tf.Variable(initial_value = D,trainable=False,name='D')
+#            self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False,name='R')
+#    def call(self,inputs):
+#        R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
+#        return inputs/R
 
 
 
@@ -71,8 +71,11 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Dnormalized = D/tf.math.sqrt(tf.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
         noc = D.shape[-2]
-        self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
-        return self.FFT(self.divide_by_R.D)
+        with tf.name_scope(self.name):
+            self.D = tf.Variable(initial_value = D,trainable=False,name='D')
+            self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False,name='R')
+        #self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
+        return self.FFT(self.D)
     def call(self,inputs):
         return (1./self.rho)*(inputs - tf.matmul(a=self.Df,b=tf.matmul(a=self.Df,b=inputs),adjoint_a=True)/(self.rho + 1.))#self.qinv(inputs)
 
