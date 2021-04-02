@@ -75,8 +75,9 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         L = self._rank1_updates(U,V,L)
         L,asVec = self._rank2_updates(U,V,Dfprev,L)
         # Update dictionary
-        #with tf.control_dependencies([asVec]):
-        #Dfprev = self.dhmul.Dfprev.assign_add(U @ util.conj_tp(V))
+        Vh = 
+        with tf.control_dependencies([asVec]):
+            Dfprev = self.dhmul.Dfprev.assign_add(tf.complex(tf.linalg.matmul(tf.math.real(U),tf.math.real(V),transpose_b=True),tf.linalg.matmul(tf.math.real(U),-tf.math.imag(V),transpose_b=True)))
         return Dfprev,L
 
     def _rank1_updates(self,U,V,L):
