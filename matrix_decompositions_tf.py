@@ -234,6 +234,7 @@ class Solve_Inverse(tf.keras.layers.Layer):
         self.dhmul = dhmul
         self.L = L
         super().__init__(*args,**kwargs)
+    @tf.custom_gradient
     def gradient_trick(self,y,Df):
         def grad(dg):
             halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
