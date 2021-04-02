@@ -263,7 +263,7 @@ class QInv(tf.keras.layers.Layer):
         self.L = tf.Variable(initial_value = L,trainable=False,name='L')
 
 class QInv_Tight_Frame(tf.keras.layers.Layer):
-    def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
+    def __init__(self,dmul,dhmul,rho,*args,**kwargs):
         # layers are included in the inputs for the purposes of sharing weights.
         super().__init__(*args,**kwargs)
         self.dmul = dmul
