@@ -76,7 +76,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         #L,asVec = self._rank2_updates(U,V,Dfprev,L)
         # Update dictionary
         #with tf.control_dependencies([asVec]):
-        Dfprev = self.dhmul.Dfprev.assign_add(U @ util.conj_tp(V))
+        #Dfprev = self.dhmul.Dfprev.assign_add(U @ util.conj_tp(V))
         return Dfprev,L
 
     def _rank1_updates(self,U,V,L):
