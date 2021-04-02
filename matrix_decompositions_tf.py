@@ -52,7 +52,8 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
 #        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
 
     def _dict_update(self):
-        Dnew = self.get_constrained_D(self.dhmul.Df)
+        Df = tf.math.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        Dnew = self.get_constrained_D(Df)
 
         # compute low rank approximation of the update
         theUpdate = Dnew - self.divide_by_R.D
@@ -68,7 +69,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df,L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
-        return [D,R,self.dhmul.Df.assign(Df),self.qinv.L.assign(L)]
+        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),self.qinv.L.assign(L)]
 
     def _update_decomposition(self,U,V,Dfprev,L):
         L = self._rank1_updates(U,V,L)
@@ -117,8 +118,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
                 L = tfr.cholesky_update(L,vec,val)
         return L
 
-#class dictionary_object2D_init(dictionary_object2D):
-class dictionary_object2D_init(tf.keras.layers.Layer):
+class dictionary_object2D_init(dictionary_object2D):
     def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-6,*args,**kwargs):
         cmplxdtype = util.complexify_dtype(D.dtype)
         tf.keras.layers.Layer.__init__(self,dtype=cmplxdtype,name=objname,*args,**kwargs)
@@ -134,11 +134,10 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
 
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
-        #self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=self.name + '/qinv',**kwargs)
-        self.qinv = QInv_Tight_Frame(self.dmul,self.dhmul,rho,*args,dtype=self.dtype,name = self.name + '/qinv',**kwargs)
-        #self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,dtype=self.dtype)
+        self.qinv = QInv(self.dmul,self.dhmul,self.noc,self.nof,rho,*args,dtype=self.dtype,name=self.name + '/qinv',**kwargs)
+        self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,dtype=self.dtype)
 
-        #ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
+        ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         
 
     def get_config(self):
@@ -163,10 +162,13 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
 
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
-        D = self.get_constrained_D(self.dhmul.Df)
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        D = self.get_constrained_D(Df)
         self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
         Df,self.qinv.L = self._update_decomposition()
-        return [self.divide_by_R.D.assign(D),self.divide_by_R.R.assign(computeR(D,D.shape[4])),self.dhmul.Df.assign(Df),self.qinv.L]
+        Dfr = self.dhmul.Dfreal.assign(tf.math.real(Df))
+        Dfi = self.dhmul.Dfimag.assign(tf.math.imag(Df))
+        return [self.divide_by_R.D.assign(D),self.divide_by_R.R.assign(computeR(D,D.shape[4])),Dfr,Dfi,self.qinv.L]
 
     def _update_decomposition(self,U=None,V=None):
         if self.qinv.wdbry:
@@ -180,12 +182,15 @@ class dictionary_object2D_full(dictionary_object2D):
 
 class dictionary_object2D_init_full(dictionary_object2D_init):
     def _dict_update(self):
-        Dnew = self.get_constrained_D(self.dhmul.Df)  
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        Dnew = self.get_constrained_D(Df)  
         D = self.divide_by_R.D.assign(Dnew)
         R = self.divide_by_R.R.assign(computeR(Dnew,Dnew.shape[4]))
         Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
         Df,L = self._update_decomposition()
-        return [D,R,Dfprev,self.dhmul.Df.assign(Df),self.qinv.L.assign(L)]
+        Dfr = self.dhmul.Dfreal.assign(tf.math.real(Df))
+        Dfi = self.dhmul.Dfimag.assign(tf.math.imag(Df))
+        return [D,R,Dfprev,Dfr,Dfi,self.qinv.L.assign(L)]
         #return [D,R]
 
     def _update_decomposition(self,U=None,V=None):
@@ -200,23 +205,23 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
 
 @tf.custom_gradient
 def _gradient_trick(y,Df):
-    #def grad(dg):
-    #    halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
-    #    ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
-    #    if self.wdbry:
-    #        Dhy = self.dhmul(y)
-    #        DhyH = util.conj_tp(Dhy)
-    #        Dhainvdg = self.dhmul(ainvdg)
-    #        DhainvdgH = util.conj_tp(Dhainvdg)
-    #        gradD = -ainvdg*DhyH - y*DhainvdgH
-    #    else:
-    #        Dy = self.dmul(y)
-    #        Dainvdg = self.dmul(ainvdg)
-    #        yH = util.conj_tp(y)
-    #        ainvdgH = util.conj_tp(ainvdg)
-    #        gradD = -Dy*ainvdgH - Dainvdg*yH
-    #    return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
-    #return tf.identity(y),grad
+    def grad(dg):
+        halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
+        ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+        if self.wdbry:
+            Dhy = self.dhmul(y)
+            DhyH = util.conj_tp(Dhy)
+            Dhainvdg = self.dhmul(ainvdg)
+            DhainvdgH = util.conj_tp(Dhainvdg)
+            gradD = -ainvdg*DhyH - y*DhainvdgH
+        else:
+            Dy = self.dmul(y)
+            Dainvdg = self.dmul(ainvdg)
+            yH = util.conj_tp(y)
+            ainvdgH = util.conj_tp(ainvdg)
+            gradD = -Dy*ainvdgH - Dainvdg*yH
+        return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
+    return tf.identity(y),grad
     def grad(dg):
         return (tf.identity(dg),Df)
     return tf.identity(y),grad
@@ -231,9 +236,10 @@ class Solve_Inverse(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
 
     def call(self, x):
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
         halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
         output = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
-        return _gradient_trick(output,self.dhmul.Df)
+        return _gradient_trick(output,Df)
 
 class QInv(tf.keras.layers.Layer):
     def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
@@ -258,13 +264,14 @@ class QInv(tf.keras.layers.Layer):
             return self.solve_inverse(inputs)
 
     def init_chol(self,noc,nof):
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
         if noc <= nof:
             idMat = tf.linalg.eye(num_rows = noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Df,b = Df,adjoint_b = True))
             self.wdbry = True
         else:
             idMat = tf.linalg.eye(num_rows = nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b= self.dhmul.Df,adjoint_a = True))
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Df,b= Df,adjoint_a = True))
             self.wdbry = False
         self.L = tf.Variable(initial_value = L,trainable=False,name='L')
 
@@ -287,8 +294,9 @@ class QInv_Tight_Frame(tf.keras.layers.Layer):
 class QInv_auto(tf.keras.layers.Layer):
     def __init__(self,dhmul,rho,wdbry=False,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.Df = tf.Variable(initial_value=dhmul.Df,trainable=True,name='Dfreq')
+        self.Df = tf.Variable(initial_value=dhmul.Df,trainable=True,name='Dfreq') #What on earth is this???
         self.rho = rho
+        raise NotImplementedError
     def get_config(self):
         return {'rho': self.rho}
     def call(self,inputs):
@@ -310,7 +318,8 @@ class DMul(tf.keras.layers.Layer):
         self.dhmul = dhmul
 
     def call(self, inputs):
-        return tf.matmul(a=self.dhmul.Df,b=inputs)
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        return tf.matmul(a=Df,b=inputs)
 
 
 class DhMul(tf.keras.layers.Layer):
@@ -318,13 +327,15 @@ class DhMul(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         with tf.name_scope(self.name):
             self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=dtype,name='Dfreq_previous')
-            self.Df = tf.Variable(initial_value=Df,trainable=True,name='Dfreq')
-        self.varname = self.Df.name
+            self.Dfreal = tf.Variable(initial_value=tf.math.real(Df),trainable=True,name='Dfreq_real')
+            self.Dfimag = tf.Variable(initial_value=tf.math.imag(Df),trainable=True,name='Dfreq_imag')
+        self.varname = self.Dfreal.name
     def get_config(self):
         return {'varname': self.varname}
 
     def call(self, inputs):
-        return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
+        Df = tf.complex(self.Dfreal,self.Dfimag)
+        return tf.matmul(a=Df,b=inputs,adjoint_a=True)
 
 
 def get_lowrank_approx(A,*args,**kwargs):
