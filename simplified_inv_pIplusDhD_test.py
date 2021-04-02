@@ -48,12 +48,7 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
         return inputs/R
 
 
-def init_dict(self,fftSz,D,name):
-    assert(tf.dtypes.as_dtype(self.dtype).is_complex)
-    Dnormalized = D/tf.math.sqrt(tf.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
-    noc = D.shape[-2]
-    self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
-    return self.FFT(self.divide_by_R.D)
+
 
 class dictionary_object2D_init(tf.keras.layers.Layer):
     def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-6,*args,**kwargs):
@@ -67,11 +62,19 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         self.rho = rho
         self.n_components = n_components
         self.FFT = transf.fft2d_inner(self.fftSz)
-        Df = self.init_dict(fftSz=fftSz,D=D,name=self.name)
+        Df = init_dict(fftSz=fftSz,D=D,name=self.name)
 
         self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
         self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
         self.qinv = QInv_Tight_Frame(self.dmul,self.dhmul,rho,*args,dtype=self.dtype,name = self.name + '/qinv',**kwargs)
+    def init_dict(self,fftSz,D,name):
+        assert(tf.dtypes.as_dtype(self.dtype).is_complex)
+        Dnormalized = D/tf.math.sqrt(tf.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
+        noc = D.shape[-2]
+        self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
+        return self.FFT(self.divide_by_R.D)
+    def call(self,inputs):
+        return self.qinv(inputs)
 
 
 import numpy as np
