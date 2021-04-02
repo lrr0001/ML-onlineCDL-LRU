@@ -117,7 +117,8 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
                 L = tfr.cholesky_update(L,vec,val)
         return L
 
-class dictionary_object2D_init(dictionary_object2D):
+#class dictionary_object2D_init(dictionary_object2D):
+class dictionary_object2D_init(tf.keras.layers.Layer):
     def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-6,*args,**kwargs):
         cmplxdtype = util.complexify_dtype(D.dtype)
         tf.keras.layers.Layer.__init__(self,dtype=cmplxdtype,name=objname,*args,**kwargs)
@@ -154,6 +155,11 @@ class dictionary_object2D_init(dictionary_object2D):
         noc = D.shape[-2]
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
         return self.FFT(self.divide_by_R.D)
+
+    def call(self,inputs):
+        return self.qinv(inputs)
+
+
 
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
