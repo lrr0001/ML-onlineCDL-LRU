@@ -1,39 +1,39 @@
 import tensorflow as tf
 import transforms as transf
 import util
-class QInv_Tight_Frame(tf.keras.layers.Layer):
-    def __init__(self,dmul,dhmul,rho,*args,**kwargs):
-        # layers are included in the inputs for the purposes of sharing weights.
-        super().__init__(*args,**kwargs)
-        self.dmul = dmul
-        self.dhmul = dhmul
-        self.rho = rho
+#class QInv_Tight_Frame(tf.keras.layers.Layer):
+#    def __init__(self,dmul,dhmul,rho,*args,**kwargs):
+#        # layers are included in the inputs for the purposes of sharing weights.
+#        super().__init__(*args,**kwargs)
+#        self.dmul = dmul
+#        self.dhmul = dhmul
+#        self.rho = rho
 
-    def get_config(self):
-        return {'rho': self.rho}
+#    def get_config(self):
+#        return {'rho': self.rho}
 
-    def call(self, inputs):
-        return (1./self.rho)*(inputs - self.dhmul(self.dmul(inputs))/(self.rho + 1.))
+#    def call(self, inputs):
+#        return (1./self.rho)*(inputs - self.dhmul(self.dmul(inputs))/(self.rho + 1.))
 
-class DMul(tf.keras.layers.Layer):
-    def __init__(self,Df,*args,**kwargs):
-        super().__init__(*args,**kwargs)
-        self.Df = Df
+#class DMul(tf.keras.layers.Layer):
+#    def __init__(self,Df,*args,**kwargs):
+#        super().__init__(*args,**kwargs)
+#        self.Df = Df
 
-    def call(self, inputs):
-        return tf.matmul(a=self.Df,b=inputs)
+#    def call(self, inputs):
+#        return tf.matmul(a=self.Df,b=inputs)
 
 
-class DhMul(tf.keras.layers.Layer):
-    def __init__(self,Df,*args,dtype=tf.complex64,**kwargs):
-        super().__init__(*args,**kwargs)
-        self.Df = Df
+#class DhMul(tf.keras.layers.Layer):
+#    def __init__(self,Df,*args,dtype=tf.complex64,**kwargs):
+#        super().__init__(*args,**kwargs)
+#        self.Df = Df
 
-    def call(self, inputs):
-        return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
+#    def call(self, inputs):
+#        return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
 
-def computeR(D,noc):
-    return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
+#def computeR(D,noc):
+#    return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
 
 #class Coef_Divide_By_R(tf.keras.layers.Layer):
 #    def __init__(self,D,noc,*args,**kwargs):
@@ -71,9 +71,10 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
         Dnormalized = D/tf.math.sqrt(tf.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))
         noc = D.shape[-2]
+        R_init = tf.math.sqrt(tf.math.reduce_sum(input_tensor=Dnormalized**2,axis=(1,2,3),keepdims=True))
         with tf.name_scope(self.name):
-            self.D = tf.Variable(initial_value = D,trainable=False,name='D')
-            self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False,name='R')
+            self.D = tf.Variable(initial_value = Dnormalized,trainable=False,name='D')
+            self.R = tf.Variable(initial_value = R_init,trainable=False,name='R')
         #self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
         return self.FFT(self.D)
     def call(self,inputs):
