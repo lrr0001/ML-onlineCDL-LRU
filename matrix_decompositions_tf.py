@@ -187,10 +187,11 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         D = self.divide_by_R.D.assign(Dnew)
         R = self.divide_by_R.R.assign(computeR(Dnew,Dnew.shape[4]))
         Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
-        Df,L = self._update_decomposition()
+        with tf.control_dependencies([Dfprev]):
+            Df,L = self._update_decomposition()
         Dfr = self.dhmul.Dfreal.assign(tf.math.real(Df))
         Dfi = self.dhmul.Dfimag.assign(tf.math.imag(Df))
-        return [D,R,Dfprev,Dfr,Dfi,self.qinv.L.assign(L)]
+        return [D,R,Dfr,Dfi,L]
         #return [D,R]
 
     def _update_decomposition(self,U=None,V=None):
@@ -200,8 +201,8 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         else:
             idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Dfprev,b = self.dhmul.Dfprev,adjoint_a = True))
+        L = self.qinv.L.assign(L)
         return self.dhmul.Dfprev,L
-
 
 #@tf.custom_gradient
 #def _gradient_trick(y,Df):
