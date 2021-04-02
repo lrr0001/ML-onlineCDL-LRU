@@ -33,8 +33,8 @@ z2 = AInv2(y)
 my_model = ppg.Model_PostProcess(xi,z)
 my_model2 = ppg.Model_PostProcess(xi,z2)
 
-my_model.compile(optimizer=tf.keras.optimizers.adam(0.001),loss=tf.keras.losses.MSE,run_eagerly=False)
-my_model2.compile(optimizer=tf.keras.optimizers.adam(0.001),loss=tf.keras.losses.MSE,run_eagerly=False)
+my_model.compile(optimizer=tf.keras.optimizers.Adam(0.001),loss=tf.keras.losses.MSE,run_eagerly=False)
+my_model2.compile(optimizer=tf.keras.optimizers.Adam(0.001),loss=tf.keras.losses.MSE,run_eagerly=False)
 import datetime
 log_dir = "logs/logs_test/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S.log")
 #tensorboard_callback = tf.keras.callbacks.TensorBoard(
