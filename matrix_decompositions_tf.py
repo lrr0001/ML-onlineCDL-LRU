@@ -218,8 +218,9 @@ def _gradient_trick(y,Df):
 class Solve_Inverse(tf.keras.layers.Layer):
     # I want auto-differentiation of the input, but not of the weights.
     # The solution? Create a pass-through "gradient layer" that computes the gradient for the weights.
-    def __init__(self,dhmul,*args,**kwargs):
+    def __init__(self,dhmul,L,*args,**kwargs):
         self.dhmul = dhmul
+        self.L = L
         super().__init__(*args,**kwargs)
 
     def call(self, x):
@@ -236,7 +237,7 @@ class QInv(tf.keras.layers.Layer):
         self.rho = rho
         self.init_chol(noc,nof)
 
-        self.solve_inverse = Solve_Inverse(dhmul,*args,**kwargs)
+        self.solve_inverse = Solve_Inverse(dhmul = dhmul,L = self.L,*args,**kwargs)
 
     def get_config(self):
         return {'rho': self.rho}
