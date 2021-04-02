@@ -234,12 +234,29 @@ class Solve_Inverse(tf.keras.layers.Layer):
         self.dhmul = dhmul
         self.L = L
         super().__init__(*args,**kwargs)
-
+    def gradient_trick(y,Df):
+        def grad(dg):
+            halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
+            ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+            if self.wdbry:
+                Dhy = self.dhmul(y)
+                DhyH = util.conj_tp(Dhy)
+                Dhainvdg = self.dhmul(ainvdg)
+                DhainvdgH = util.conj_tp(Dhainvdg)
+                gradD = -ainvdg*DhyH - y*DhainvdgH
+            else:
+                Dy = self.dmul(y)
+                Dainvdg = self.dmul(ainvdg)
+                yH = util.conj_tp(y)
+                ainvdgH = util.conj_tp(ainvdg)
+                gradD = -Dy*ainvdgH - Dainvdg*yH
+            return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
+        return tf.identity(y),grad
     def call(self, x):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
         halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
         output = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
-        return _gradient_trick(output,Df)
+        return self.gradient_trick(output,Df)
 
 class QInv(tf.keras.layers.Layer):
     def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
