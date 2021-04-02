@@ -16,23 +16,18 @@ class QInv_Tight_Frame(tf.keras.layers.Layer):
         return (1./self.rho)*(inputs - self.dhmul(self.dmul(inputs))/(self.rho + 1.))
 
 class DMul(tf.keras.layers.Layer):
-    def __init__(self,dhmul,*args,**kwargs):
+    def __init__(self,Df,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.dhmul = dhmul
+        self.Df = Df
 
     def call(self, inputs):
-        return tf.matmul(a=self.dhmul.Df,b=inputs)
+        return tf.matmul(a=self.Df,b=inputs)
 
 
 class DhMul(tf.keras.layers.Layer):
     def __init__(self,Df,*args,dtype=tf.complex64,**kwargs):
         super().__init__(*args,**kwargs)
-        with tf.name_scope(self.name):
-            self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=dtype,name='Dfreq_previous')
-            self.Df = tf.Variable(initial_value=Df,trainable=True,name='Dfreq')
-        self.varname = self.Df.name
-    def get_config(self):
-        return {'varname': self.varname}
+        self.Df = Df
 
     def call(self, inputs):
         return tf.matmul(a=self.Df,b=inputs,adjoint_a=True)
@@ -66,9 +61,11 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         self.n_components = n_components
         self.FFT = transf.fft2d_inner(self.fftSz)
         Df = self.init_dict(fftSz=fftSz,D=D,name=self.name)
-
-        self.dhmul = DhMul(Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
-        self.dmul = DMul(self.dhmul,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
+        with tf.name_scope(self.name):
+            self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=dtype,name='Dfreq_previous')
+            self.Df = tf.Variable(initial_value=Df,trainable=True,name='Dfreq')
+        self.dhmul = DhMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dhmul',**kwargs)
+        self.dmul = DMul(self.Df,*args,dtype=self.dtype,name=self.name + '/dmul',**kwargs)
         self.qinv = QInv_Tight_Frame(self.dmul,self.dhmul,rho,*args,dtype=self.dtype,name = self.name + '/qinv',**kwargs)
     def init_dict(self,fftSz,D,name):
         assert(tf.dtypes.as_dtype(self.dtype).is_complex)
