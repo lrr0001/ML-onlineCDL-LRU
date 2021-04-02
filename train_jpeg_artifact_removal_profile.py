@@ -16,6 +16,7 @@ cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 20
 noe_per_save = 1
 num_of_saves = 2
+steps_per_epoch = 5
 step_size = 0.01
 
 
@@ -147,6 +148,6 @@ time_callback = TimeHistory()
 for ii in range(num_of_saves):
     if ii == 1:
         with tf.profiler.experimental.Profile(log_dir):
-            model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=5,shuffle=False,callbacks = [time_callback,])
+            model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [time_callback,])
     else:
-        model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=5,shuffle=False,callbacks = [time_callback,])
+        model.fit(x=dataset_batch,epochs= noe_per_save,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [time_callback,])
