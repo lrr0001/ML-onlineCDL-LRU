@@ -79,7 +79,7 @@ class dictionary_object2D_init(tf.keras.layers.Layer):
         #self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
         return self.FFT(self.D)
     def call(self,inputs):
-        Df = tf.complex(self.Dfreal,Dfimag)
+        Df = tf.complex(self.Dfreal,self.Dfimag)
         return (1./self.rho)*(inputs - tf.matmul(a=Df,b=tf.matmul(a=Df,b=inputs),adjoint_a=True)/(self.rho + 1.))#self.qinv(inputs)
 
 
