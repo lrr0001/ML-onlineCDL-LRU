@@ -94,7 +94,7 @@ for (x,y) in dataset_batch:
 
 #   ******** BUILD MODEL ********
 CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
-real_dtype = tf.float32))
+real_dtype = tf.float32
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
 highpass = tf.keras.Input(shape=highpassShape,dtype=real_dtype)
