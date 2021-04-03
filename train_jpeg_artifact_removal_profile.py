@@ -67,9 +67,9 @@ def restore_double(x):
 
 def _parse_image_function(example_proto):
     x = tf.io.parse_single_example(example_proto, example_structure)
-    highpass = restore_double(x['highpass'])
-    lowpass = restore_double(x['lowpass'])
-    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
+    highpass = restore_double(x['highpass']).astype('float32')
+    lowpass = restore_double(x['lowpass']).astype('float32')
+    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed']).astype('float32')),restore_double(x['raw']).astype('float32'))
 
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
