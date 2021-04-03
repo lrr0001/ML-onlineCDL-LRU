@@ -138,7 +138,7 @@ import os
 os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
 smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.001, lrMax=500, steps=2*num_of_steps)
-model.fit(x=dataset_batch,epochs=2,steps_per_epoch=num_of_steps,shuffle=False,callbacks = [smith_callback,])
+model.fit(x=dataset_batch,epochs=2,steps_per_epoch=num_of_steps,shuffle=False,verbose=2,callbacks = [smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
 pkl.dump(smith_callback.output_summary(),fid)
