@@ -2,7 +2,7 @@ import tensorflow as tf
 import pickle as pkl
 import numpy as np
 
-nof = [32,32]
+nof = [32,64]
 noc = 3
 stride = [1]
 fltrSz = ((5,5),(7,7),)
