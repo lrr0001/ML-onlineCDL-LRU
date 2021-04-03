@@ -66,8 +66,8 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         R = self.divide_by_R.R.assign(computeR(D,D.shape[4]))
         
         # Compute DFT (The conjugate is necessary because F{A} = F{U}F{V}^T
-        Uf = util.complexNum(U)
-        Vf = tf.math.conj(self.FFT(V))
+        Uf = tf.cast(U,tf.complex128)#util.complexNum(U)
+        Vf = tf.math.conj(self.FFT(tf.cast(V,tf.float64)))
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df,L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
@@ -78,7 +78,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         L,asVec = self._rank2_updates(U,V,Dfprev,L)
         # Update dictionary 
         with tf.control_dependencies([asVec]):
-            Dfprev = self.dhmul.Dfprev.assign(Dfprev + U @ util.conj_tp(V))
+            Dfprev = self.dhmul.Dfprev.assign(Dfprev + tf.cast(U @ util.conj_tp(V),self.dtype))
         return Dfprev,L
 
     def _rank1_updates(self,U,V,L):
@@ -96,7 +96,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         return self.qinv.L.assign(L)
 
     def _rank2_updates(self,U,V,Dfprev,L):
-        eigvals,eigvecs,asVec = self._get_eigen_decomp(U,V,Dfprev)
+        eigvals,eigvecs,asVec = self._get_eigen_decomp(U,V,tf.cast(Dfprev,tf.complex128))
         L = self._eig_chol_update(eigvals,eigvecs,L)
         return self.qinv.L.assign(L),asVec
 
@@ -194,12 +194,13 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         #return [D,R]
 
     def _update_decomposition(self,U=None,V=None):
+        Dfprev = tf.cast(self.dhmul.Dfprev,tf.complex128)
         if self.qinv.wdbry:
-            idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Dfprev,b = self.dhmul.Dfprev,adjoint_b = True))
+            idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.complex128)
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_b = True))
         else:
-            idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Dfprev,b = self.dhmul.Dfprev,adjoint_a = True))
+            idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.complex128)
+            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_a = True))
         L = self.qinv.L.assign(L)
         return self.dhmul.Dfprev,L
 
@@ -239,8 +240,8 @@ class Solve_Inverse(tf.keras.layers.Layer):
     @tf.custom_gradient
     def gradient_trick(self,y,Df):
         def grad(dg):
-            halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
-            ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+            halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=tf.cast(dg,tf.complex128),lower=True)
+            ainvdg = tf.cast(tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True),self.dtype)
             if self.wdbry:
                 Dhy = self.dhmul(y)
                 DhyH = util.conj_tp(Dhy)
@@ -262,8 +263,9 @@ class Solve_Inverse(tf.keras.layers.Layer):
         output = self.freezeD(x)
         return self.gradient_trick(output,Df)
     def freezeD(self,x):
+        x = tf.cast(x,tf.complex128)
         halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=x,lower=True)
-        return tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
+        return tf.cast(tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True),self.dtype)
 
 class QInv(tf.keras.layers.Layer):
     def __init__(self,dmul,dhmul,noc,nof,rho,*args,**kwargs):
@@ -296,13 +298,13 @@ class QInv(tf.keras.layers.Layer):
             return self.solve_inverse.freezeD(inputs)
 
     def init_chol(self,noc,nof):
-        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        Df = tf.complex(tf.cast(self.dhmul.Dfreal,tf.float64),tf.cast(self.dhmul.Dfimag,tf.float64))
         if noc <= nof:
-            idMat = tf.linalg.eye(num_rows = noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
+            idMat = tf.linalg.eye(num_rows = noc,batch_shape = (1,1,1),dtype=tf.complex128)
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Df,b = Df,adjoint_b = True))
             self.wdbry = True
         else:
-            idMat = tf.linalg.eye(num_rows = nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
+            idMat = tf.linalg.eye(num_rows = nof,batch_shape = (1,1,1),dtype=tf.complex128)
             L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Df,b= Df,adjoint_a = True))
             self.wdbry = False
         self.L = tf.Variable(initial_value = L,trainable=False,name='L')
