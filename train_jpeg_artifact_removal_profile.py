@@ -31,8 +31,8 @@ problem_param = pkl.load(fid)
 fid.close()
 data_param = problem_param['data_param']
 targetSz = data_param['target_size']
-qY = data_param['qY']
-qUV = data_param['qUV']
+qY = data_param['qY'].astype('float32')
+qUV = data_param['qUV'].astype('float32')
 strides = problem_param['stride']
 fltrSz = problem_param['fltrSz']
 real_dtype = data_param['dtype']
