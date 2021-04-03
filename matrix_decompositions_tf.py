@@ -197,10 +197,10 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         Dfprev = tf.cast(self.dhmul.Dfprev,tf.complex128)
         if self.qinv.wdbry:
             idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.complex128)
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_b = True))
+            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_b = True))
         else:
             idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.complex128)
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_a = True))
+            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_a = True))
         L = self.qinv.L.assign(L)
         return self.dhmul.Dfprev,L
 
