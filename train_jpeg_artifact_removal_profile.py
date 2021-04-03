@@ -45,7 +45,7 @@ padding = data_param['padding']
 
 
 #   ******** CROPPING AND PADDING ********
-cropAndMerge = mlcsc.CropPadObject(targetSz,strides,[np.asarray(ks) for ks in fltrSz],real_dtype)
+cropAndMerge = mlcsc.CropPadObject(targetSz,strides,[np.asarray(ks) for ks in fltrSz],tf.float32)#real_dtype)
 paddingTuple = cropAndMerge.paddingTuple
 fftSz = cropAndMerge.get_fft_size(targetSz,strides)
 paddingDiff = ((padding[0][0] - paddingTuple[0][0],padding[0][1] - paddingTuple[0][1]),(padding[1][0] - paddingTuple[1][0],padding[1][1] - paddingTuple[1][1]))
