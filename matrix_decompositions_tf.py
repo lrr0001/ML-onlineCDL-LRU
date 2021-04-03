@@ -55,8 +55,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
 #        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
 
     def _dict_update(self):
-        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
-        Dnew = self.get_constrained_D(Df)
+        Dnew = self.get_constrained_D(tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag))
 
         # compute low rank approximation of the update
         theUpdate = Dnew - self.divide_by_R.D
@@ -72,7 +71,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df,L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
-        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),self.qinv.L.assign(L)]
+        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L]
 
     def _update_decomposition(self,U,V,Dfprev,L):
         L = self._rank1_updates(U,V,L)
@@ -94,12 +93,12 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
             for v,uhu in zip(tf.unstack(V,axis=-1),tf.unstack(UhU,axis=-1)):
                 #L = self.qinv.L.assign(tfr.cholesky_update(L,v,uhu))
                 L = tfr.cholesky_update(L,v,uhu)
-        return L
+        return self.qinv.L.assign(L)
 
     def _rank2_updates(self,U,V,Dfprev,L):
         eigvals,eigvecs,asVec = self._get_eigen_decomp(U,V,Dfprev)
         L = self._eig_chol_update(eigvals,eigvecs,L)
-        return L,asVec
+        return self.qinv.L.assign(L),asVec
 
     def _get_eigen_decomp(self,U,V,Dfprev):
         if self.qinv.wdbry:
@@ -573,7 +572,7 @@ class ifft_trunc_normalize(tf.keras.layers.Layer):
     def call(self,inputs):
         D = self.ifft(inputs)
         Dtrunc = D[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
-        return self.noc*Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
+        return Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
 
 def rank2eigen(U,V,epsilon=1e-5):
     vhv = tf.math.reduce_sum(tf.math.conj(V)*V,axis=-1,keepdims=True)
