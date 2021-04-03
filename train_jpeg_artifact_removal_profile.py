@@ -136,7 +136,7 @@ tensorboard_callback = tf.keras.callbacks.TensorBoard(
 #      profile_batch = '2,5'
 )
 
-model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
+model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
 for tv in model.trainable_variables:
     print(tv.name)
 model.save_weights(experimentpath + modelfilename)
