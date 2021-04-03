@@ -301,11 +301,11 @@ class QInv(tf.keras.layers.Layer):
         Df = tf.complex(tf.cast(self.dhmul.Dfreal,tf.float64),tf.cast(self.dhmul.Dfimag,tf.float64))
         if noc <= nof:
             idMat = tf.linalg.eye(num_rows = noc,batch_shape = (1,1,1),dtype=tf.complex128)
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Df,b = Df,adjoint_b = True))
+            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Df,b = Df,adjoint_b = True))
             self.wdbry = True
         else:
             idMat = tf.linalg.eye(num_rows = nof,batch_shape = (1,1,1),dtype=tf.complex128)
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = Df,b= Df,adjoint_a = True))
+            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Df,b= Df,adjoint_a = True))
             self.wdbry = False
         self.L = tf.Variable(initial_value = L,trainable=False,name='L')
 
