@@ -40,7 +40,7 @@ class MultiLayerCSC(optmz.ADMM):
         mu_init = tf.cast(mu_init,dtype=cmplxdtype.real_dtype)
         self.noL = noL
         optmz.ADMM.__init__(self=self,rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
-        self.alpha = tf.Variable(initial_value=alpha_init,trainable=False,name = 'alpha',dtype=dtype)
+        self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,name = 'alpha',dtype=dtype)
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
@@ -696,11 +696,11 @@ class GetNextIterZ(tf.keras.layers.Layer):
     def __init__(self,rho,mu_init,mu_nextlayer,dictObj,dictObj_nextlayer,b_init,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.rho = rho
-        self.mu = tf.Variable(mu_init,trainable=False,dtype=self.dtype)
+        self.mu = tf.Variable(mu_init,trainable=True,dtype=self.dtype)
         self.mu_nextlayer = mu_nextlayer
         self.dictObj = dictObj
         self.dictObj_nextlayer = dictObj_nextlayer
-        self.b = tf.Variable(b_init,trainable=False,dtype=self.dtype)
+        self.b = tf.Variable(b_init,trainable=True,dtype=self.dtype)
         self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
     def call(self,inputs):
         # inputs are in spatial domain
@@ -731,8 +731,8 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         self.dictObj = dictObj
         self.dictObj_nextlayer = dictObj_nextlayer
         with tf.name_scope(self.name):
-            self.mu = tf.Variable(mu_init,trainable=False,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
-            self.b = tf.Variable(b_init,trainable=False,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
+            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
+            self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
         self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
@@ -762,9 +762,9 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
     '''
     def __init__(self,rho,mu_init,dictObj,b_init,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.mu = tf.Variable(mu_init,trainable=False,dtype=self.dtype)
+        self.mu = tf.Variable(mu_init,trainable=True,dtype=self.dtype)
         self.dictObj = dictObj
-        self.b = tf.Variable(b_init/(rho*mu_init),trainable=False,dtype=self.dtype) # Is this an active design decision to avoid dependence on mu?
+        self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=self.dtype) # Is this an active design decision to avoid dependence on mu?
         self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
 
     def call(self,inputs):
@@ -788,8 +788,8 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         
         self.dictObj = dictObj
         with tf.name_scope(self.name):
-            self.mu = tf.Variable(mu_init,trainable=False,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
-            self.b = tf.Variable(b_init/(rho*mu_init),trainable=False,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
+            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
+            self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
         self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
