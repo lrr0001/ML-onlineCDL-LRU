@@ -12,11 +12,11 @@ rho = 1.
 alpha_init = 1.5
 mu_init = 1.
 b_init = 0.
-lraParam = {'n_components': 4}
-cmplxdtype = tf.complex128 # This should really be elsewhere.
-batch_size = 20
+n_components=4
+cmplxdtype = tf.complex64 # This should really be elsewhere.
+batch_size = 1
 step_size = 0.1
-num_of_steps = 800
+num_of_steps = 10800
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -30,8 +30,8 @@ problem_param = pkl.load(fid)
 fid.close()
 data_param = problem_param['data_param']
 targetSz = data_param['target_size']
-qY = data_param['qY']
-qUV = data_param['qUV']
+qY = data_param['qY'].astype('float32')
+qUV = data_param['qUV'].astype('float32')
 strides = problem_param['stride']
 fltrSz = problem_param['fltrSz']
 real_dtype = data_param['dtype']
@@ -44,7 +44,7 @@ padding = data_param['padding']
 
 
 #   ******** CROPPING AND PADDING ********
-cropAndMerge = mlcsc.CropPadObject(targetSz,strides,[np.asarray(ks) for ks in fltrSz],real_dtype)
+cropAndMerge = mlcsc.CropPadObject(targetSz,strides,[np.asarray(ks) for ks in fltrSz],tf.float32)
 paddingTuple = cropAndMerge.paddingTuple
 fftSz = cropAndMerge.get_fft_size(targetSz,strides)
 paddingDiff = ((padding[0][0] - paddingTuple[0][0],padding[0][1] - paddingTuple[0][1]),(padding[1][0] - paddingTuple[1][0],padding[1][1] - paddingTuple[1][1]))
@@ -66,13 +66,14 @@ def restore_double(x):
 
 def _parse_image_function(example_proto):
     x = tf.io.parse_single_example(example_proto, example_structure)
-    highpass = restore_double(x['highpass'])
-    lowpass = restore_double(x['lowpass'])
-    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
+    highpass = tf.cast(restore_double(x['highpass']),tf.float32)
+    lowpass = tf.cast(restore_double(x['lowpass']),tf.float32)
+    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],tf.cast(restore_double(x['compressed']),tf.float32)),tf.cast(restore_double(x['raw']),tf.float32))
 
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
+dataset_batch = dataset_batch.repeat(4)
 
 
 for (x,y) in dataset_batch:
@@ -92,8 +93,8 @@ for (x,y) in dataset_batch:
     break
 
 #   ******** BUILD MODEL ********
-CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],lraParam,noi,noL,cmplxdtype)
-
+CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
+real_dtype = tf.float32))
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
 highpass = tf.keras.Input(shape=highpassShape,dtype=real_dtype)
@@ -136,8 +137,8 @@ log_sha_command = "git log --pretty=format:'%h' -n 1 >> "
 import os
 os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
-smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.005, lrMax=500, steps=num_of_steps - 1)
-model.fit(x=dataset_batch,epochs=1,steps_per_epoch=num_of_steps,shuffle=False,callbacks = [smith_callback,])
+smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.001, lrMax=500, steps=4*num_of_steps)
+model.fit(x=dataset_batch,epochs=4,steps_per_epoch=num_of_steps,shuffle=False,callbacks = [smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
 pkl.dump(smith_callback.output_summary(),fid)
