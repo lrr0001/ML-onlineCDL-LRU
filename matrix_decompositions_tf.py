@@ -481,14 +481,14 @@ def randomized_svd(A, n_components=3, n_oversamples=10, n_iter='auto',
             A, rangeSize=Nrand, n_iter=n_iter,
             power_iteration_normalizer=power_iteration_normalizer)
         B = tf.matmul(Q, A,adjoint_a=True)
-        s, Uhat, V = tf.linalg.svd(tf.debugging.check_numerics(B), full_matrices = False)
+        s, Uhat, V = tf.linalg.svd(tf.debugging.check_numerics(tensor=B,message='projected svd inf or NaN error'), full_matrices = False)
 
         if Uhat.dtype.is_complex and not Q.dtype.is_complex:
             U = tf.cast(Q,Uhat.dtype) @ Uhat[:, :n_components]
         else:
             U = Q @ Uhat[:, :n_components]
     else:
-       s, U, V = tf.linalg.svd(tf.debugging.check_numerics(A), full_matrices = False)
+       s, U, V = tf.linalg.svd(tf.debugging.check_numerics(tensor=A,message='full svd inf or NaN error'), full_matrices = False)
 
     if transpose:
         # transpose back the results according to the input convention
