@@ -5,7 +5,7 @@ import post_process_grad as ppg
 import tf_rewrites as tfr
 import util
 
-class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
+class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProcess):
     def __init__(self,fltrSz,fftSz,noc,nof,rho,objname,n_components,epsilon=1e-6,cmplxdtype=tf.complex128,*args,**kwargs):
         tf.keras.layers.Layer.__init__(self,name=objname,dtype=cmplxdtype,*args,**kwargs)
         self.fftSz = fftSz
@@ -23,6 +23,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         self.get_constrained_D = ifft_trunc_normalize(fltrSz,fftSz,noc,dtype=self.dtype)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
+        self.build_shift_test(5)
         
 
     def get_config(self):
@@ -55,6 +56,9 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
 #        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
 
     def _dict_update(self):
+        return self._dict_update_LR()
+
+    def _dict_update_LR(self):
         Dnew = self.get_constrained_D(tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag))
 
         # compute low rank approximation of the update
@@ -70,10 +74,10 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
         Vf = tf.math.conj(self.FFT(tf.cast(V,tf.float64)))
 
         # Update Decomposition and Frequency-Domain Dictionary
-        Df,L = self._update_decomposition(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
+        Df,L = self._update_decomposition_LR(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
         return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L]
 
-    def _update_decomposition(self,U,V,Dfprev,L):
+    def _update_decomposition_LR(self,U,V,Dfprev,L):
         L = self._rank1_updates(U,V,L)
         L,asVec = self._rank2_updates(U,V,Dfprev,L)
         # Update dictionary 
@@ -120,6 +124,42 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess):
                 L = tfr.cholesky_update(L,vec,val)
         return L
 
+    def _dict_update_full(self):
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        Dnew = self.get_constrained_D(Df)  
+        D = self.divide_by_R.D.assign(Dnew)
+        R = self.divide_by_R.R.assign(computeR(Dnew,Dnew.shape[4]))
+        Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
+        with tf.control_dependencies([Dfprev]):
+            Df,L = self._update_decomposition_full()
+        Dfr = self.dhmul.Dfreal.assign(tf.math.real(Df))
+        Dfi = self.dhmul.Dfimag.assign(tf.math.imag(Df))
+        return [D,R,Dfr,Dfi,L]
+        #return [D,R]
+
+    def _update_decomposition_full(self,U=None,V=None):
+        Dfprev = tf.cast(self.dhmul.Dfprev,tf.complex128)
+        if self.qinv.wdbry:
+            idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.complex128)
+            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_b = True))
+        else:
+            idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.complex128)
+            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_a = True))
+        L = self.qinv.L.assign(L)
+        return self.dhmul.Dfprev,L
+
+    def build_shift_test(self,number_of_samples):
+        self.constx = tf.constant(self.FFT(tf.random.normal(shape=(number_of_samples,) + self.fftSz + (self.nof,1,))),dtype=self.dtype)
+        ppg.CondPostProcess.add_cupdate(self.dhmul.varname,tf.function(self.shift_test),tf.function(self._dict_update_full))
+        return None
+
+    def shift_test(self):
+        y = self.rho*self.constx + self.dhmul(self.dmul(self.constx))
+        z = self.qinv(y)
+        return tf.math.reduce_max(tf.math.abs(self.constx - z))
+
+
+
 class dictionary_object2D_init(dictionary_object2D):
     def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-6,*args,**kwargs):
         cmplxdtype = util.complexify_dtype(D.dtype)
@@ -140,6 +180,7 @@ class dictionary_object2D_init(dictionary_object2D):
         self.get_constrained_D = ifft_trunc_normalize(self.fltrSz,self.fftSz,self.noc,dtype=self.dtype)
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
+        self.build_shift_test(5)
         
 
     def get_config(self):
@@ -161,48 +202,16 @@ class dictionary_object2D_init(dictionary_object2D):
 
 class dictionary_object2D_full(dictionary_object2D):
     def _dict_update(self):
-        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
-        D = self.get_constrained_D(Df)
-        self.dhmul.Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
-        Df,self.qinv.L = self._update_decomposition()
-        Dfr = self.dhmul.Dfreal.assign(tf.math.real(Df))
-        Dfi = self.dhmul.Dfimag.assign(tf.math.imag(Df))
-        return [self.divide_by_R.D.assign(D),self.divide_by_R.R.assign(computeR(D,D.shape[4])),Dfr,Dfi,self.qinv.L]
-
-    def _update_decomposition(self,U=None,V=None):
-        if self.qinv.wdbry:
-            idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_b = True))
-        else:
-            idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.dtypes.as_dtype(self.dtype))
-            L = tf.linalg.cholesky(self.rho*idMat + tf.linalg.matmul(a = self.dhmul.Df,b = self.dhmul.Df,adjoint_a = True))
-        L = self.qinv.L.assign(L)
-        return self.dhmul.Dfprev,L
+        return self._dict_update_full()
+    def build_shift_test(self,num_of_samples):
+        return None
 
 class dictionary_object2D_init_full(dictionary_object2D_init):
     def _dict_update(self):
-        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
-        Dnew = self.get_constrained_D(Df)  
-        D = self.divide_by_R.D.assign(Dnew)
-        R = self.divide_by_R.R.assign(computeR(Dnew,Dnew.shape[4]))
-        Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
-        with tf.control_dependencies([Dfprev]):
-            Df,L = self._update_decomposition()
-        Dfr = self.dhmul.Dfreal.assign(tf.math.real(Df))
-        Dfi = self.dhmul.Dfimag.assign(tf.math.imag(Df))
-        return [D,R,Dfr,Dfi,L]
-        #return [D,R]
+        return self._dict_update_full()
+    def build_shift_test(self,num_of_samples):
+        return None
 
-    def _update_decomposition(self,U=None,V=None):
-        Dfprev = tf.cast(self.dhmul.Dfprev,tf.complex128)
-        if self.qinv.wdbry:
-            idMat = tf.linalg.eye(num_rows = self.noc,batch_shape = (1,1,1),dtype=tf.complex128)
-            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_b = True))
-        else:
-            idMat = tf.linalg.eye(num_rows = self.nof,batch_shape = (1,1,1),dtype=tf.complex128)
-            L = tf.linalg.cholesky(tf.cast(self.rho,tf.complex128)*idMat + tf.linalg.matmul(a = Dfprev,b = Dfprev,adjoint_a = True))
-        L = self.qinv.L.assign(L)
-        return self.dhmul.Dfprev,L
 
 #@tf.custom_gradient
 #def _gradient_trick(y,Df):

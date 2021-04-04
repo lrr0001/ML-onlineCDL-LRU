@@ -7,6 +7,53 @@ class PostProcess:
         PostProcess.update[varName] = update_fun
 
 
+class CondPostProcess:
+    cond = {}
+    condupdate = {}
+    def add_cupdate(varName,ccheck,cupdate):
+        assert varName not in CondPostProcess.cond, "Conditional update function already exists for %r; variable name must be unique." % varName
+        CondPostProcess.cond[varName] = ccheck
+        CondPostProcess.condupdate[varName] = cupdate
+
+
+class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
+    def __init__(self,eps=5e-5):
+        super().__init__()
+        
+        self.itrtn = 0
+        self.drift_eps = eps
+        self.history = {}
+
+
+    def on_train_begin(self,logs):
+        logs = logs or {}
+        self.condupdate_keys = []
+        for tv in self.model.trainable_variables:
+            if tv.name in CondPostProcess.cond:
+                self.condupdate_keys.append(tv.name)
+        
+        
+    def on_batch_end(self, epoch, logs=None):
+        logs = logs or {}
+        self.itrtn += 1
+        self.history.setdefault('itrtns', []).append(self.itrtn)
+        for tvname in self.condupdate_keys:
+            drift = CondPostProcess.cond[tvname]()
+            self.history.setdefault('drift_' + tvname,[]).append(drift)
+            if drift > self.drift_eps:
+                CondPostProcess.condupdate[tvname]()
+
+        for k, v in logs.items():
+            self.history.setdefault(k, []).append(v)
+
+    def output_summary(self):
+        output = {'iterations': self.history['itrtns']}
+        for tvname in self.condupdate_keys:
+            output['drift_' + tvname] = self.history['drift_' + tvname]
+        return output
+
+
+
 class Model_PostProcess(tf.keras.Model):
     def train_step(self,data):
         myoutputs = tf.keras.Model.train_step(self,data)
