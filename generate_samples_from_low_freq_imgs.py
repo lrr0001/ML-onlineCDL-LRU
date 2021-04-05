@@ -29,7 +29,7 @@ def savePatch(coord,lowpass,highpass,raw,padding,patch_size,qY,qUV,Yoffset,datap
 # ************CODE START******************
 
 # Choose parameters
-patch_size = (48,48)
+patch_size = (32,32)
 padding = ((13,13),(13,13))
 startOffset1 = (16,16)
 startOffset2 = (16,16)
