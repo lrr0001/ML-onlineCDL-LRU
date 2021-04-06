@@ -161,7 +161,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
 
 class dictionary_object2D_init(dictionary_object2D):
-    def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-6,*args,**kwargs):
+    def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-15,*args,**kwargs):
         cmplxdtype = util.complexify_dtype(D.dtype)
         tf.keras.layers.Layer.__init__(self,dtype=cmplxdtype,name=objname,*args,**kwargs)
         self.fftSz = fftSz
