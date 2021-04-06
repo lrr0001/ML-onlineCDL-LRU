@@ -15,6 +15,11 @@ class CondPostProcess:
         CondPostProcess.cond[varName] = ccheck
         CondPostProcess.condupdate[varName] = cupdate
 
+class SaveStateProcess
+    update = {}
+    def add_save(varName,save_fun):
+        assert varName not in SaveStateProcess.save_state, "Save state function already exists for %r; name must be unique." % varName
+        SaveStateProcess.save_state[varName] = save_fun
 
 class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
     def __init__(self,eps=5e-5):
@@ -52,6 +57,41 @@ class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
             output['drift_' + tvname] = self.history['drift_' + tvname]
         return output
 
+
+
+class StateTracker(tf.keras.callbacks.Callback,PostProcess,StateSaveProcess):
+    def __init__(self):
+        super().__init__()
+        
+        self.itrtn = 0
+        self.history = {}
+
+
+    def on_train_begin(self,logs):
+        logs = logs or {}
+        self.update_keys = []
+        for tv in self.model.trainable_variables:
+            if tv.name in PostProcess.update:
+                self.update_keys.append(tv.name)
+        
+    def on_batch_end(self, epoch, logs=None):
+        logs = logs or {}
+        self.itrtn += 1
+        self.history.setdefault('itrtns', []).append(self.itrtn)
+        for tvname in self.update_keys:
+            PostProcess.update[tvname]()
+
+        for statesavename in StateSaveProcess.save_state:
+            self.history.setdefault(statesavename,[]).append(StateSaveProcess.save_state[statesavename]())
+
+        for k, v in logs.items():
+            self.history.setdefault(k, []).append(v)
+
+    def output_summary(self):
+        output = {'iterations': self.history['itrtns']}
+        for tvname in self.condupdate_keys:
+            output['drift_' + tvname] = self.history['drift_' + tvname]
+        return output
 
 
 class Model_PostProcess(tf.keras.Model):

@@ -6,7 +6,7 @@ import tf_rewrites as tfr
 import util
 
 class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProcess):
-    def __init__(self,fltrSz,fftSz,noc,nof,rho,objname,n_components,epsilon=1e-6,cmplxdtype=tf.complex128,*args,**kwargs):
+    def __init__(self,fltrSz,fftSz,noc,nof,rho,objname,n_components,epsilon=1e-15,cmplxdtype=tf.complex128,*args,**kwargs):
         tf.keras.layers.Layer.__init__(self,name=objname,dtype=cmplxdtype,*args,**kwargs)
         self.fftSz = fftSz
         self.noc = noc
@@ -370,10 +370,10 @@ class DMul(tf.keras.layers.Layer):
 
 
 class DhMul(tf.keras.layers.Layer):
-    def __init__(self,Df,*args,dtype=tf.complex64,**kwargs):
+    def __init__(self,Df,*args,**kwargs):
         super().__init__(*args,**kwargs)
         with tf.name_scope(self.name):
-            self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=dtype,name='Dfreq_previous')
+            self.Dfprev = tf.Variable(initial_value=Df,trainable=False,dtype=self.dtype,name='Dfreq_previous')
             self.Dfreal = tf.Variable(initial_value=tf.math.real(Df),trainable=True,name='Dfreq_real')
             self.Dfimag = tf.Variable(initial_value=tf.math.imag(Df),trainable=True,name='Dfreq_imag')
         self.varname = self.Dfreal.name
@@ -585,7 +585,7 @@ class ifft_trunc_normalize(tf.keras.layers.Layer):
         Dtrunc = D[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
         return Dtrunc/tf.math.sqrt(tf.reduce_sum(input_tensor=Dtrunc**2,axis=(1,2,3),keepdims=True))
 
-def rank2eigen(U,V,epsilon=1e-5):
+def rank2eigen(U,V,epsilon=1e-15):
     vhv = tf.math.reduce_sum(tf.math.conj(V)*V,axis=-1,keepdims=True)
     uhu = tf.math.reduce_sum(tf.math.conj(U)*U,axis=-1,keepdims=True)
     uhv = tf.math.reduce_sum(tf.math.conj(U)*V,axis=-1,keepdims=True)
