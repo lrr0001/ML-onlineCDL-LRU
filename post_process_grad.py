@@ -15,11 +15,11 @@ class CondPostProcess:
         CondPostProcess.cond[varName] = ccheck
         CondPostProcess.condupdate[varName] = cupdate
 
-class SaveStateProcess:
+class StateSaveProcess:
     update = {}
     def add_save(varName,save_fun):
-        assert varName not in SaveStateProcess.save_state, "Save state function already exists for %r; name must be unique." % varName
-        SaveStateProcess.save_state[varName] = save_fun
+        assert varName not in StateSaveProcess.save_state, "Save state function already exists for %r; name must be unique." % varName
+        StateSaveProcess.save_state[varName] = save_fun
 
 class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
     def __init__(self,eps=5e-5):
