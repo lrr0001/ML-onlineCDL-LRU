@@ -16,7 +16,7 @@ class CondPostProcess:
         CondPostProcess.condupdate[varName] = cupdate
 
 class StateSaveProcess:
-    update = {}
+    save_state = {}
     def add_save(varName,save_fun):
         assert varName not in StateSaveProcess.save_state, "Save state function already exists for %r; name must be unique." % varName
         StateSaveProcess.save_state[varName] = save_fun
