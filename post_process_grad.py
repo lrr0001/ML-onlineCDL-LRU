@@ -32,7 +32,7 @@ class PostProcessCallback(tf.keras.callbacks.Callback,PostProcess):
         self.updates = []
         for tv in self.model.trainable_variables:
             if tv.name in PostProcess.update:
-                self.updates.append(tf.function(PostProcess.update[tv.name]))
+                self.updates.append(PostProcess.update[tv.name])
 
     def on_batch_end(self, epoch, logs=None):
         logs = logs or {}

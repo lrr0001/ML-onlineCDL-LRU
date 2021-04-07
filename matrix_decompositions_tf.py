@@ -151,7 +151,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
     def build_shift_test(self,number_of_samples):
         self.constx = tf.constant(self.FFT(tf.random.normal(shape=(number_of_samples,) + self.fftSz + (self.nof,1,),dtype=tf.as_dtype(self.dtype).real_dtype)),dtype=self.dtype)
-        ppg.CondPostProcess.add_cupdate(self.dhmul.varname,tf.function(self.shift_test),tf.function(self._dict_update_full))
+        ppg.CondPostProcess.add_cupdate(self.dhmul.varname,tf.function(self.shift_test),self._dict_update_full)
         return None
 
     def shift_test(self):
