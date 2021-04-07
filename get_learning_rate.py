@@ -143,6 +143,9 @@ driftTrackerCallback = ppg.DriftTracker(0)
 postprocesscallback = ppg.PostProcessCallback()
 model.fit(x=dataset_batch,epochs=2,steps_per_epoch=num_of_steps,shuffle=False,verbose=1,callbacks = [postprocesscallback,driftTrackerCallback,smith_callback,])
 
+print(CSC.dictObj[0].runtest)
+print(CSC.dictObj[1].runtest)
+
 fid = open(experimentpath + 'smith.pkl','wb')
 pkl.dump(smith_callback.output_summary(),fid)
 pkl.dump(driftTrackerCallback.output_summary(),fid)
