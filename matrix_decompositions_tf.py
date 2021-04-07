@@ -77,7 +77,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df,L = self._update_decomposition_LR(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
-        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L,self.runtest.assign(tf.cast(0,self.dtype)]
+        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L,self.runtest.assign(tf.cast(0,self.dtype))]
 
     def _update_decomposition_LR(self,U,V,Dfprev,L):
         L = self._rank1_updates(U,V,L)
