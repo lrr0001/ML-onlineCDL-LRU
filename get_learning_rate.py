@@ -105,7 +105,7 @@ reconstruction,itstats = CSC(inputs)
 rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
 import post_process_grad as ppg
-model = tf.keras.Model(inputs,clipped_reconstruction)
+model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 import time
@@ -136,13 +136,11 @@ log_sha_command = "git log --pretty=format:'%h' -n 1 >> "
 import os
 os.system(log_sha_command + experimentpath + sha_name)
 time_callback = TimeHistory()
-smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.01, lrMax=0.1, steps=2*num_of_steps)
+smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.001, lrMax=0.6, steps=2*num_of_steps)
 driftTrackerCallback = ppg.DriftTracker(0)
-stateTrackerCallback = ppg.StateTracker()
-model.fit(x=dataset_batch,epochs=2,steps_per_epoch=num_of_steps,shuffle=False,verbose=1,callbacks = [stateTrackerCallback,driftTrackerCallback,smith_callback,])
+model.fit(x=dataset_batch,epochs=2,steps_per_epoch=num_of_steps,shuffle=False,verbose=1,callbacks = [driftTrackerCallback,smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
-pkl.dump(stateTrackerCallback.output_summary(),fid)
 pkl.dump(smith_callback.output_summary(),fid)
 pkl.dump(driftTrackerCallback.output_summary(),fid)
 fid.close()
