@@ -21,6 +21,28 @@ class StateSaveProcess:
         assert varName not in StateSaveProcess.save_state, "Save state function already exists for %r; name must be unique." % varName
         StateSaveProcess.save_state[varName] = save_fun
 
+class PostProcessCallback(tf.keras.callbacks.Callback,PostProcess):
+    def __init__(self):
+        super().__init__()
+        self.history = {}
+
+
+    def on_train_begin(self,logs):
+        logs = logs or {}
+        self.updates = []
+        for tv in self.model.trainable_variables:
+            if tv.name in PostProcess.update:
+                self.updates.append(tf.function(PostProcess.update[tv.name]))
+
+    def on_batch_end(self, epoch, logs=None):
+        logs = logs or {}
+
+        for an_update in self.updates:
+            an_update()
+
+        for k, v in logs.items():
+            self.history.setdefault(k, []).append(v)
+
 class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
     def __init__(self,eps=5e-5):
         super().__init__()
