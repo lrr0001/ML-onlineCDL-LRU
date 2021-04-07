@@ -82,7 +82,7 @@ class StateTracker(tf.keras.callbacks.Callback,PostProcess,StateSaveProcess):
             PostProcess.update[tvname]()
 
         for statesavename in StateSaveProcess.save_state:
-            self.history.setdefault(statesavename,[]).append(StateSaveProcess.save_state[statesavename]())
+            self.history.setdefault('state_' + statesavename,[]).append(StateSaveProcess.save_state[statesavename]())
 
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)

@@ -24,6 +24,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         self.build_shift_test(5)
+        self.state_save()
         
 
     def get_config(self):
@@ -158,6 +159,12 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
         z = self.qinv(y)
         return tf.math.reduce_max(tf.math.abs(self.constx - z))
 
+    def state_save(self):
+        ppg.SaveStateProcess.add_save(self.dhmul.varname,self._return_states)
+
+
+    def _return_states(self):
+        return {'dictionary_before': self.dhmul.Dfprev, 'dictionary_current':tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag),'L':self.qinv.L,'R': self.divide_by_R.R}
 
 
 class dictionary_object2D_init(dictionary_object2D):
@@ -181,7 +188,7 @@ class dictionary_object2D_init(dictionary_object2D):
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         self.build_shift_test(5)
-        
+        self.state_save()
 
     def get_config(self):
         return {'fftSz': self.fftSz,'noc': self.noc,'nof':self.nof,'fltrSz': self.fltrSz,'epsilon': self.epsilon,'rho': self.rho,'n_components': self.n_components}
