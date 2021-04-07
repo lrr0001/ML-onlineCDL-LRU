@@ -190,6 +190,8 @@ class dictionary_object2D_init(dictionary_object2D):
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         self.build_shift_test(5)
         self.state_save()
+        self.runtest = tf.Variable(tf.cast(1,self.dtype),trainable=False)
+
 
     def get_config(self):
         return {'fftSz': self.fftSz,'noc': self.noc,'nof':self.nof,'fltrSz': self.fltrSz,'epsilon': self.epsilon,'rho': self.rho,'n_components': self.n_components}
