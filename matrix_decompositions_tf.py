@@ -164,7 +164,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
 
     def _return_states(self):
-        return {'dictionary_before': self.dhmul.Dfprev, 'dictionary_current':tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag),'L':self.qinv.L,'R': self.divide_by_R.R}
+        return {'dictionary_before': tf.keras.backend.get_value(self.dhmul.Dfprev), 'dictionary_current':tf.keras.backend.get_value(self.dhmul.Dfreal) + 1j * tf.keras.backend.get_value(self.dhmul.Dfimag),'L':tf.keras.backend.get_value(self.qinv.L),'R': tf.keras.backend.get_value(self.divide_by_R.R)}
 
 
 class dictionary_object2D_init(dictionary_object2D):
