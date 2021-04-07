@@ -141,7 +141,7 @@ time_callback = TimeHistory()
 smith_callback = smith_lr_search.LearningRateFinder(lrMin=0.001, lrMax=0.6, steps=2*num_of_steps)
 driftTrackerCallback = ppg.DriftTracker(0)
 postprocesscallback = ppg.PostProcessCallback()
-model.fit(x=dataset_batch,epochs=2,steps_per_epoch=num_of_steps,shuffle=False,verbose=1,callbacks = [postprocescallback,driftTrackerCallback,smith_callback,])
+model.fit(x=dataset_batch,epochs=2,steps_per_epoch=num_of_steps,shuffle=False,verbose=1,callbacks = [postprocesscallback,driftTrackerCallback,smith_callback,])
 
 fid = open(experimentpath + 'smith.pkl','wb')
 pkl.dump(smith_callback.output_summary(),fid)
