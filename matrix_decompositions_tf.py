@@ -160,7 +160,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
         return tf.math.reduce_max(tf.math.abs(self.constx - z))
 
     def state_save(self):
-        ppg.SaveStateProcess.add_save(self.dhmul.varname,self._return_states)
+        ppg.StateSaveProcess.add_save(self.dhmul.varname,self._return_states)
 
 
     def _return_states(self):
