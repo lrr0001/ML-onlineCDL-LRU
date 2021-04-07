@@ -63,7 +63,7 @@ class StateTracker(tf.keras.callbacks.Callback,PostProcess,StateSaveProcess):
     def __init__(self):
         super().__init__()
         
-        self.itrtn = 0
+        self.trtn = 0
         self.history = {}
 
 
@@ -76,21 +76,21 @@ class StateTracker(tf.keras.callbacks.Callback,PostProcess,StateSaveProcess):
         
     def on_batch_end(self, epoch, logs=None):
         logs = logs or {}
-        self.itrtn += 1
-        self.history.setdefault('itrtns', []).append(self.itrtn)
-        for tvname in self.update_keys:
-            PostProcess.update[tvname]()
-
+        self.trtn += 1
+        self.history.setdefault('trtns', []).append(self.trtn)
         for statesavename in StateSaveProcess.save_state:
             self.history.setdefault('state_' + statesavename,[]).append(StateSaveProcess.save_state[statesavename]())
+
+        for tvname in self.update_keys:
+            PostProcess.update[tvname]()
 
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)
 
     def output_summary(self):
-        output = {'iterations': self.history['itrtns']}
-        for tvname in self.condupdate_keys:
-            output['drift_' + tvname] = self.history['drift_' + tvname]
+        output = {'iterations': self.history['trtns']}
+        for tvname in StateSaveProcess.save_state:
+            output['state_' + tvname] = self.history['state_' + tvname]
         return output
 
 
