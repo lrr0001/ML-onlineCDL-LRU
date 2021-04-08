@@ -105,6 +105,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
         L = self._eig_chol_update(eigvals,eigvecs,L)
         return self.qinv.L.assign(L),asVec
 
+    @tf.function
     def _get_eigen_decomp(self,U,V,Dfprev):
         if self.qinv.wdbry:
             asVec = tf.linalg.matmul(Dfprev,V)
@@ -118,6 +119,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
             eigvals,eigvecs = rank2eigen(Vshifted,asVec,self.epsilon)
         return eigvals,eigvecs,asVec
 
+    @tf.function
     def _eig_chol_update(self,eigvals,eigvecs,L):
         for vals,vecs in zip(eigvals,eigvecs):
             for val,vec in zip(tf.unstack(vals,axis=0),tf.unstack(vecs,axis=0)):
