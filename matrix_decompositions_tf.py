@@ -24,8 +24,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         self.build_shift_test(5)
-        self.state_save()
-        self.runtest = tf.Variable(tf.cast(1,self.dtype),trainable=False)
+        #self.state_save()
         
 
     def get_config(self):
@@ -49,10 +48,10 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
         return self.dhmul(inputs)
 
     def call(self,inputs):
-        return self.runtest*self.qinv(inputs)
+        return self.qinv(inputs)
 
     def freezeD(self,inputs):
-        return self.runtest*self.qinv.freezeD(inputs)
+        return self.qinv.freezeD(inputs)
 
 #    def computeR(self,D):
 #        return tf.math.sqrt(tf.math.reduce_sum(input_tensor=D**2,axis=(1,2,3),keepdims=True))/self.noc
@@ -77,7 +76,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df,L = self._update_decomposition_LR(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
-        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L,self.runtest.assign(tf.cast(0,self.dtype))]
+        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L]
 
     def _update_decomposition_LR(self,U,V,Dfprev,L):
         L = self._rank1_updates(U,V,L)
@@ -189,8 +188,7 @@ class dictionary_object2D_init(dictionary_object2D):
 
         ppg.PostProcess.add_update(self.dhmul.varname,self._dict_update)
         self.build_shift_test(5)
-        self.state_save()
-        self.runtest = tf.Variable(tf.cast(1,self.dtype),trainable=False)
+        #self.state_save()
 
 
     def get_config(self):

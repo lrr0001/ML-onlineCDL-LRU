@@ -13,15 +13,15 @@ mu_init = 1.
 b_init = 0.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
-batch_size = 2
-steps_per_epoch = 2
+batch_size = 1
+steps_per_epoch = 384
 step_size = 0.01
-num_of_epochs = 2
+num_of_epochs = 8
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
 modelname = 'ML_LRA_'
-databasename = 'simpleTest/'
+databasename = 'BSDS500/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
@@ -107,7 +107,9 @@ reconstruction,itstats = CSC(inputs)
 rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
 import post_process_grad as ppg
-model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
+#model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
+model = tf.keras.Model(inputs,clipped_reconstruction)
+
 
 #   ******** COMPILE AND TRAIN MODEL ********
 import time
@@ -144,10 +146,13 @@ time_callback = TimeHistory()
 checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=experimentpath + checkpointfilename, monitor='loss',
     verbose=0, save_best_only=False, save_weights_only=True, save_freq='epoch', options=None
 )
+driftTrackerCallback = ppg.DriftTracker(1e-12)
+postprocesscallback = ppg.PostProcessCallback()
 
-model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [time_callback,checkpoint_callback,])
+model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [postprocesscallback,driftTrackerCallback,time_callback,checkpoint_callback,])
 
 
 fid = open(experimentpath + timesname,'wb')
+pkl.dump(driftTrackerCallback.output_summary(),fid)
 pkl.dump(time_callback.train_times,fid)
 fid.close()
