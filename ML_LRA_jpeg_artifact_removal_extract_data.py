@@ -125,7 +125,7 @@ output['fftSz'] = fftSz[1]
 output['rho'] = rho
 output['n_components'] = n_components
 output['cmplxdtype'] = cmplxdtype
-model.load_weights('iter_2_weights.ckpt')
+model.load_weights('iter_1074_weights.ckpt')
 output['Dfreal'] = CSC.dictObj[1].dhmul.Dfreal
 output['Dfimag'] = CSC.dictObj[1].dhmul.Dfimag
 output['Dfprev'] = CSC.dictObj[1].dhmul.Dfprev
@@ -133,10 +133,10 @@ output['L'] = CSC.dictObj[1].qinv.L
 output['D'] = CSC.dictObj[1].divide_by_R.D
 output['R'] = CSC.dictObj[1].divide_by_R.R
 output['shift'] = CSC.dictObj[1].shift_test()
-fid = open('iter_2_weights.pkl','wb')
+fid = open('iter_1074_weights.pkl','wb')
 pkl.dump(output,fid)
 fid.close()
-model.load_weights('iter_3_weights.ckpt')
+model.load_weights('iter_1075_weights.ckpt')
 output['Dfreal'] = CSC.dictObj[1].dhmul.Dfreal
 output['Dfimag'] = CSC.dictObj[1].dhmul.Dfimag
 output['Dfprev'] = CSC.dictObj[1].dhmul.Dfprev
@@ -144,6 +144,6 @@ output['L'] = CSC.dictObj[1].qinv.L
 output['D'] = CSC.dictObj[1].divide_by_R.D
 output['R'] = CSC.dictObj[1].divide_by_R.R
 output['shift'] = CSC.dictObj[1].shift_test()
-fid = open('iter_3_weights.pkl','wb')
+fid = open('iter_1075_weights.pkl','wb')
 pkl.dump(output,fid)
 fid.close()
