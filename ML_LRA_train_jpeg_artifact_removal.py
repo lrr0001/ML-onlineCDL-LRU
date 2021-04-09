@@ -149,7 +149,7 @@ checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=experimentpath
 driftTrackerCallback = ppg.DriftTracker(1e-12,True)
 postprocesscallback = ppg.PostProcessCallback()
 
-model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [postprocesscallback,driftTrackerCallback,time_callback,])
+model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,verbose=2,callbacks = [postprocesscallback,driftTrackerCallback,time_callback,])
 
 model.save_weights(experimentpath + modelname + 'end_model.ckpt')
 
