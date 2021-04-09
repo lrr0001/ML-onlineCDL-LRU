@@ -130,8 +130,8 @@ output['Dfreal'] = CSC.dictObj[1].dhmul.Dfreal
 output['Dfimag'] = CSC.dictObj[1].dhmul.Dfimag
 output['Dfprev'] = CSC.dictObj[1].dhmul.Dfprev
 output['L'] = CSC.dictObj[1].qinv.L
-output['D'] = CSC.dictObj[1].divide_by_D.D
-output['R'] = CSC.dictObj[1].divide_by_D.R
+output['D'] = CSC.dictObj[1].divide_by_R.D
+output['R'] = CSC.dictObj[1].divide_by_R.R
 output['shift'] = CSC.dictObj[1].shift_test()
 fid = open('iter_2_weights.pkl','wb')
 pickle.dump(output,fid)
@@ -141,8 +141,8 @@ output['Dfreal'] = CSC.dictObj[1].dhmul.Dfreal
 output['Dfimag'] = CSC.dictObj[1].dhmul.Dfimag
 output['Dfprev'] = CSC.dictObj[1].dhmul.Dfprev
 output['L'] = CSC.dictObj[1].qinv.L
-output['D'] = CSC.dictObj[1].divide_by_D.D
-output['R'] = CSC.dictObj[1].divide_by_D.R
+output['D'] = CSC.dictObj[1].divide_by_R.D
+output['R'] = CSC.dictObj[1].divide_by_R.R
 output['shift'] = CSC.dictObj[1].shift_test()
 fid = open('iter_3_weights.pkl','wb')
 pickle.dump(output,fid)
