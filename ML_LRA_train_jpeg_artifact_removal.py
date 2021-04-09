@@ -146,10 +146,12 @@ time_callback = TimeHistory()
 checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=experimentpath + checkpointfilename, monitor='loss',
     verbose=0, save_best_only=False, save_weights_only=True, save_freq='epoch', options=None
 )
-driftTrackerCallback = ppg.DriftTracker(1e-12)
+driftTrackerCallback = ppg.DriftTracker(1e-12,True)
 postprocesscallback = ppg.PostProcessCallback()
 
-model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [postprocesscallback,driftTrackerCallback,time_callback,checkpoint_callback,])
+model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,callbacks = [postprocesscallback,driftTrackerCallback,time_callback,])
+
+model.save_weights(experimentpath + modelname + 'end_model.ckpt')
 
 
 fid = open(experimentpath + timesname,'wb')
