@@ -49,6 +49,7 @@ class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
         
         self.itrtn = 0
         self.lastreset = -10
+        self.saveCounter = 0
         self.savestuff = savestuff
         self.drift_eps = eps
         self.history = {}
@@ -71,8 +72,9 @@ class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
             self.history.setdefault('drift_' + tvname,[]).append(drift)
             if drift > self.drift_eps:
                 CondPostProcess.condupdate[tvname]()
-                if self.lastreset + 1 == self.itrtn and self.savestuff:
+                if self.lastreset + 1 == self.itrtn and self.savestuff and self.saveCounter < 10:
                     self.model.save_weights('iter_' + str(self.itrtn) + '_weights.ckpt')
+                    self.saveCounter = self.saveCounter + 1
                 self.lastreset = self.itrtn
             drift = CondPostProcess.cond[tvname]()
             self.history.setdefault('afterdrift_' + tvname,[]).append(drift)

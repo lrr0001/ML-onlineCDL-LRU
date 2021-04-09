@@ -105,7 +105,6 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
         L = self._eig_chol_update(eigvals,eigvecs,L)
         return self.qinv.L.assign(L),asVec
 
-    @tf.function
     def _get_eigen_decomp(self,U,V,Dfprev):
         if self.qinv.wdbry:
             asVec = tf.linalg.matmul(Dfprev,V)
