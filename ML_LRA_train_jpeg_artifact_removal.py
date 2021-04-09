@@ -14,7 +14,7 @@ b_init = 0.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
-steps_per_epoch = 384
+steps_per_epoch = 3150
 step_size = 0.01
 num_of_epochs = 8
 
@@ -146,10 +146,10 @@ time_callback = TimeHistory()
 checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=experimentpath + checkpointfilename, monitor='loss',
     verbose=0, save_best_only=False, save_weights_only=True, save_freq='epoch', options=None
 )
-driftTrackerCallback = ppg.DriftTracker(1e-12,True)
+driftTrackerCallback = ppg.DriftTracker(1e-12)
 postprocesscallback = ppg.PostProcessCallback()
 
-model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,verbose=2,callbacks = [postprocesscallback,driftTrackerCallback,time_callback,])
+model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,verbose=2,callbacks = [postprocesscallback,driftTrackerCallback,time_callback,checkpoint_callback])
 
 model.save_weights(experimentpath + modelname + 'end_model.ckpt')
 

@@ -37,6 +37,8 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
         #Dnormalized = noc*Dmeaned/tf.math.sqrt(tf.reduce_sum(input_tensor=Dmeaned**2,axis=(1,2,3),keepdims=True))
         Dnormalized = Drand/tf.math.sqrt(tf.reduce_sum(input_tensor=Drand**2,axis=(1,2,3),keepdims=True))
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
+        with tf.name_scope(self.name):
+            self.DbeforeApprox = tf.Variable(initial_value=self.divide_by_R.D,trainable=False,name='D_before_approx')
         #self.D = tf.Variable(initial_value=Dnormalized,trainable=False)
         #self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False) # keras may not like this
         return self.FFT(self.divide_by_R.D)    
@@ -61,7 +63,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
     def _dict_update_LR(self):
         Dnew = self.get_constrained_D(tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag))
-
+        DbeforeApprox = self.DbeforeApprox.assign(Dnew)
         # compute low rank approximation of the update
         theUpdate = Dnew - self.divide_by_R.D
         U,V,approx = stack_svd(theUpdate,5,n_components = self.n_components)
@@ -76,7 +78,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
         # Update Decomposition and Frequency-Domain Dictionary
         Df,L = self._update_decomposition_LR(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
-        return [D,R,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L]
+        return [D,R,DbeforeApprox,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L]
 
     def _update_decomposition_LR(self,U,V,Dfprev,L):
         L = self._rank1_updates(U,V,L)
@@ -127,7 +129,14 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
     def _dict_update_full(self):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
-        Dnew = self.get_constrained_D(Df)  
+        Dnew = self.get_constrained_D(Df)
+        return self._dict_update_full_from_D(Dnew)
+
+    def _dict_update_reset_drift(self):
+        return self._dict_update_full_from_D(self.DbeforeApprox)
+
+
+    def _dict_update_full_from_D(self,Dnew):
         D = self.divide_by_R.D.assign(Dnew)
         R = self.divide_by_R.R.assign(computeR(Dnew,Dnew.shape[4]))
         Dfprev = self.dhmul.Dfprev.assign(self.FFT(D))
@@ -151,7 +160,7 @@ class dictionary_object2D(tf.keras.layers.Layer,ppg.PostProcess,ppg.CondPostProc
 
     def build_shift_test(self,number_of_samples):
         self.constx = tf.constant(self.FFT(tf.random.normal(shape=(number_of_samples,) + self.fftSz + (self.nof,1,),dtype=tf.as_dtype(self.dtype).real_dtype)),dtype=self.dtype)
-        ppg.CondPostProcess.add_cupdate(self.dhmul.varname,tf.function(self.shift_test),self._dict_update_full)
+        ppg.CondPostProcess.add_cupdate(self.dhmul.varname,tf.function(self.shift_test),self._dict_update_reset_drift)
         return None
 
     def shift_test(self):
@@ -204,6 +213,8 @@ class dictionary_object2D_init(dictionary_object2D):
         #return transf.fft2d_inner(fftSz)(self.D)
         noc = D.shape[-2]
         self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
+        with tf.name_scope(self.name):
+            self.DbeforeApprox = tf.Variable(initial_value=self.divide_by_R.D,trainable=False,name='D_before_approx')
         return self.FFT(self.divide_by_R.D)
 
 

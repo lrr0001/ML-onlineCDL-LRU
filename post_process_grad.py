@@ -44,13 +44,13 @@ class PostProcessCallback(tf.keras.callbacks.Callback,PostProcess):
             self.history.setdefault(k, []).append(v)
 
 class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
-    def __init__(self,eps=5e-5,savestuff=False):
+    def __init__(self,eps=5e-5)#,savestuff=False):
         super().__init__()
         
         self.itrtn = 0
-        self.lastreset = -10
-        self.saveCounter = 0
-        self.savestuff = savestuff
+        #self.lastreset = -10
+        #self.saveCounter = 0
+        #self.savestuff = savestuff
         self.drift_eps = eps
         self.history = {}
 
@@ -72,11 +72,11 @@ class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
             self.history.setdefault('drift_' + tvname,[]).append(drift)
             if drift > self.drift_eps:
                 CondPostProcess.condupdate[tvname]()
-                if self.lastreset + 1 == self.itrtn and self.savestuff and self.saveCounter < 10:
-                    print(drift)
-                    self.model.save_weights('iter_' + str(self.itrtn) + '_weights.ckpt')
-                    self.saveCounter = self.saveCounter + 1
-                self.lastreset = self.itrtn
+                #if self.lastreset + 1 == self.itrtn and self.savestuff and self.saveCounter < 10:
+                #    print(drift)
+                #    self.model.save_weights('iter_' + str(self.itrtn) + '_weights.ckpt')
+                #    self.saveCounter = self.saveCounter + 1
+                #self.lastreset = self.itrtn
             drift = CondPostProcess.cond[tvname]()
             self.history.setdefault('afterdrift_' + tvname,[]).append(drift)
 
