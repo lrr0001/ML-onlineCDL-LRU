@@ -134,7 +134,7 @@ output['D'] = CSC.dictObj[1].divide_by_R.D
 output['R'] = CSC.dictObj[1].divide_by_R.R
 output['shift'] = CSC.dictObj[1].shift_test()
 fid = open('iter_2_weights.pkl','wb')
-pickle.dump(output,fid)
+pkl.dump(output,fid)
 fid.close()
 model.load_weights('iter_3_weights.ckpt')
 output['Dfreal'] = CSC.dictObj[1].dhmul.Dfreal
@@ -145,5 +145,5 @@ output['D'] = CSC.dictObj[1].divide_by_R.D
 output['R'] = CSC.dictObj[1].divide_by_R.R
 output['shift'] = CSC.dictObj[1].shift_test()
 fid = open('iter_3_weights.pkl','wb')
-pickle.dump(output,fid)
+pkl.dump(output,fid)
 fid.close()
