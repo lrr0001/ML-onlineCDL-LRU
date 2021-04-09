@@ -73,6 +73,7 @@ class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
             if drift > self.drift_eps:
                 CondPostProcess.condupdate[tvname]()
                 if self.lastreset + 1 == self.itrtn and self.savestuff and self.saveCounter < 10:
+                    print(drift)
                     self.model.save_weights('iter_' + str(self.itrtn) + '_weights.ckpt')
                     self.saveCounter = self.saveCounter + 1
                 self.lastreset = self.itrtn
