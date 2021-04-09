@@ -44,7 +44,7 @@ class PostProcessCallback(tf.keras.callbacks.Callback,PostProcess):
             self.history.setdefault(k, []).append(v)
 
 class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
-    def __init__(self,eps=5e-5)#,savestuff=False):
+    def __init__(self,eps=5e-5):#,savestuff=False):
         super().__init__()
         
         self.itrtn = 0
