@@ -122,8 +122,6 @@ for tv in model.trainable_variables:
 output = {}
 output['fltrSz'] = fltrSz[1]
 output['fftSz'] = fftSz[1]
-output['noc'] = nof[0]
-output['nof'] = nof[1]
 output['rho'] = rho
 output['n_components'] = n_components
 output['cmplxdtype'] = cmplxdtype
