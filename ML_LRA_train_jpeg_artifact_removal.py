@@ -20,7 +20,7 @@ num_of_epochs = 8
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
-modelname = 'ML_LRA_'
+modelname = 'ML_LRA_SGD'
 databasename = 'BSDS500/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
@@ -133,7 +133,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
         self.train_times.append(time.time() - self.epoch_time_start)
 
 
-model.compile(optimizer = tf.keras.optimizers.Adam(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
+model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
 for tv in model.trainable_variables:
     print(tv.name)
 
