@@ -140,3 +140,19 @@ class clip(tf.keras.layers.Layer):
         return inputs
     def get_config(self):
         return {'a': self.a, 'b': self.b}
+
+class BiasedReLU(tf.keras.layers.Layer):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.relu = tf.keras.layers.ReLU(*args,**kwargs)
+    def call(self,inputs):
+        x,bias = inputs
+        return self.relu(x - bias)
+
+class Shrinkage(tr.keras.layers.Layer):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.relu = BiasedReLU(*args,**kwargs)
+    def call(self,inputs):
+        x,bias = inputs
+        return self.relu(x,bias) - self.relu(-x,bias)

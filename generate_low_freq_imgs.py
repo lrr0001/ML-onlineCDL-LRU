@@ -10,7 +10,7 @@ noi = 20
 lmbda = 0.1
 dtype = 'float64'
 
-datasetname = 'BSDS500/'
+datasetname = 'SimpleTest/'
 
 # Obtain quantization matrices from chosen quality factor
 import PIL

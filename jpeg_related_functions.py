@@ -20,16 +20,19 @@ class Smooth_JPEG(optmz.ADMM):
         self.Wt = JPEG_Coef2YUV(dtype=self.dtype)
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
         #self.relaxlayer = Relax_SmoothJPEG(dtype=self.dtype) # move alpha to uupdate
-        self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
-        self.uupdate = GammaUpdate_JPEG(self.alpha,dtype=self.dtype)
+        #self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
+        self.yupdate = ZUpdate_JPEG_Implicit(self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
+        #self.uupdate = GammaUpdate_JPEG(self.alpha,dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
     def init_x(self,s,negC):
         return (None,None)
     def init_y(self,s,x,Ax,negC):
-        return (self.Wt(negC),negC)
+        #return (self.Wt(negC),negC)
+        self.Wt(negC)
     def init_u(self,s,Ax,By,negC):
-        return [0.,0.,0.]
+        #return [0.,0.,0.]
+        return (None,)
     def get_negative_C(self,s):
         Ws = self.W(s)
         Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
@@ -40,14 +43,14 @@ class Smooth_JPEG(optmz.ADMM):
 
     # iterative steps:
     def xstep(self,y,u,By,negC):
-        return (self.xupdate(y),0.)
+        return (self.xupdate(y),None)
     def relax(self,Ax,By,negC):
         #return self.relaxlayer((negC,By))
         return (None,)
     def ystep(self,x,u,Ax_relaxed,negC):
-        return self.yupdate((x,u,negC))
+        return (self.yupdate((x,negC)),None)
     def ustep(self,u,Ax_relaxed,By,negC):
-        return self.uupdate((u,By,negC))
+        return self.init_u((u,Ax_relaxed,By,negC))
 
     # Before and After:
     def preprocess(self,s):
@@ -362,3 +365,33 @@ class QuantizationAdjustment(tf.keras.layers.Layer):
         bestcandidate = tf.where(dctelemerror(candidate3) < dctelemerror(bestcandidate),candidate3,bestcandidate)
         return bestcandidate
 
+
+class Enforce_JPEG_Constraint(tf.keras.layers.Layer):
+    def __init__(self,qY,qUV,W,Wt,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
+        self.qY = qY
+        self.qUV = qUV
+        self.W = W
+        self.Wt = Wt
+    def get_config(self):
+        return {'Yoffset': self.Yoffset, 'qY': self.qY, 'qUV': self.qUV}
+    def call(self,inputs):
+        fx,negC = inputs
+        zero = tf.cast(0.,self.dtype)
+        max_value = [negC[channel] + offset + q/2 for (channel,q,offset) in zip(range(negC),(qY,qUV,qUV),(Yoffset,zero,zero))]
+        min_value = [negC[channel] + offset - q/2 for (channel,q,offset) in zip(range(negC),(qY,qUV,qUV),(Yoffset,zero,zero)]
+        Wx = self.W(fx)
+        delta_value = [tf.where(Wx[channel] + offset > max_value,max_value + offset - Wx[channel],zero) for (channel,offset) in zip(range(negC),(self.Yoffset,zero,zero))]
+        delta_value = [tf.where(Wz[channel] + offset < min_value,min_value + offset - Wx[channel],zero) for (channel,offset) in zip(range(negC),(self.Yoffset,zero,zero))]
+        return self.Wt(delta_value)
+
+class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
+    def __init__(self,qY,qUV,W,Wt,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.enforce_jpeg_constraint = Enforce_JPEG_Constraint(qY,qUV,W,Wt,*args,**kwargs)
+    def call(self,inputs):
+        fx,negC = inputs
+        delta_z = self.enforce_jpeg_constraint(fx,negC)
+        z = fx + delta_z
+        return (z,z)
