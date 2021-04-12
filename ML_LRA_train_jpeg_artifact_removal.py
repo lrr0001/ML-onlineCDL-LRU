@@ -20,7 +20,7 @@ num_of_epochs = 64
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
-modelname = 'ML_LRA'
+modelname = 'ML_LRA_'
 databasename = 'BSDS500/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
