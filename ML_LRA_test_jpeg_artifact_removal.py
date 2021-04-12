@@ -104,7 +104,7 @@ lowpass = tf.keras.Input(shape = highpassShape,dtype = real_dtype)
 compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
 inputs = (highpass,lowpass,compressed)
 
-reconstruction,itstats = CSC(inputs)
+reconstruction,reconstruction2,itstats = CSC(inputs)
 rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
 import post_process_grad as ppg
