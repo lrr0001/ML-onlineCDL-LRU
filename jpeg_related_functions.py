@@ -382,7 +382,7 @@ class Enforce_JPEG_Constraint(tf.keras.layers.Layer):
         min_value = [negC[channel] - q/2. for (channel,q) in zip(range(len(negC)),(self.qY,self.qUV,self.qUV))]
         Wx = self.W(fx)
         delta_value = [tf.where(Wx[channel] > max_value[channel],max_value[channel] - Wx[channel],zero) for channel in range(len(negC))]
-        delta_value = [tf.where(Wx[channel] < min_value[channel],min_value[channel] - Wx[channel],delta_value) for channel in range(len(negC))]
+        delta_value = [tf.where(Wx[channel] < min_value[channel],min_value[channel] - Wx[channel],delta_value[channel]) for channel in range(len(negC))]
         return self.Wt(delta_value)
 
 class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
