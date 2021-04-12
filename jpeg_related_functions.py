@@ -395,6 +395,7 @@ class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
     def call(self,inputs):
         fx,negC = inputs
         delta_z = self.enforce_jpeg_constraint((fx,negC))
-        delta_z2 = self.enforce_jpeg_constraint((fx + delta_z,negC)) # for precision
-        z = fx + delta_z + delta_z2
+        z = fx + delta_z
+        delta_z = self.enforce_jpeg_constraint((z,negC)) # for precision
+        z = z + delta_z
         return z
