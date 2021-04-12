@@ -239,7 +239,8 @@ class MultiLayerCSC(optmz.ADMM):
 
     def get_b_shape(self,fftSz,M):
         #return [1,fftSz[0],fftSz[1],M,1,]
-        return [1,1,1,M,1]
+        #return [1,1,1,M,1]
+        return (1,)
 
     # Function is no longer necessary
     #def get_downsampled_b_shape(self,fftSz,M):

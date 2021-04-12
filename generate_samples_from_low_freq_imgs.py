@@ -35,7 +35,7 @@ startOffset1 = (16,16)
 startOffset2 = (16,16)
 # load previous parameters
 
-datasetname = 'simpleTest/'
+datasetname = 'BSDS500/'
 dataloadpath = 'data/scratchwork/' + datasetname + 'whole/'
 datasavepath = 'data/scratchwork/' + datasetname + 'patches/'
 fid = open('data/processed/' + datasetname + 'param.pckl','rb')

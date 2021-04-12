@@ -14,14 +14,14 @@ b_init = 0.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
-steps_per_epoch = 2
+steps_per_epoch = 3150
 step_size = 0.01
-num_of_epochs = 2
+num_of_epochs = 64
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
-modelname = 'ML_LRA_SGD'
-databasename = 'simpleTest/'
+modelname = 'ML_LRA'
+databasename = 'BSDS500/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
@@ -70,7 +70,7 @@ def _parse_image_function(example_proto):
     x = tf.io.parse_single_example(example_proto, example_structure)
     highpass = restore_double(x['highpass'])
     lowpass = restore_double(x['lowpass'])
-    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
+    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),jrf.RGB2YUV(dtype=real_dtype)(restore_double(x['raw'])))
 
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
@@ -103,12 +103,13 @@ lowpass = tf.keras.Input(shape = highpassShape,dtype = real_dtype)
 compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
 inputs = (highpass,lowpass,compressed)
 
-reconstruction,itstats = CSC(inputs)
+reconstruction,reconstruction2,itstats = CSC(inputs)
 rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
+yuv_reconstruction = jrf.RGB2YUV(dtype=real_dtype)(clipped_reconstruction)
 import post_process_grad as ppg
 #model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
-model = tf.keras.Model(inputs,clipped_reconstruction)
+model = tf.keras.Model(inputs,yuv_reconstruction)
 
 
 #   ******** COMPILE AND TRAIN MODEL ********
