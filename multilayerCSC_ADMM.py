@@ -235,7 +235,7 @@ class MultiLayerCSC(optmz.ADMM):
         #s_LF,QWs = negC
         Dx = self.IFFT[0](self.dictObj[0].dmul(x[0]))
         vreal = self.IFFT[0](v)
-        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,self.cropAndMerge.crop(tf.squeeze(vreal,axis=-1) + s_LF),itstats)
+        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,self.cropAndMerge.crop(tf.squeeze(vreal,axis=-1)) + s_LF,itstats)
 
     def get_b_shape(self,fftSz,M):
         #return [1,fftSz[0],fftSz[1],M,1,]
