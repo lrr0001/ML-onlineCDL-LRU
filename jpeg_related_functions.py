@@ -29,7 +29,7 @@ class Smooth_JPEG(optmz.ADMM):
         return (None,None)
     def init_y(self,s,x,Ax,negC):
         #return (self.Wt(negC),negC)
-        self.Wt(negC)
+        return (self.Wt(negC),None)
     def init_u(self,s,Ax,By,negC):
         #return [0.,0.,0.]
         return (None,)
@@ -50,7 +50,7 @@ class Smooth_JPEG(optmz.ADMM):
     def ystep(self,x,u,Ax_relaxed,negC):
         return (self.yupdate((x,negC)),None)
     def ustep(self,u,Ax_relaxed,By,negC):
-        return self.init_u((u,Ax_relaxed,By,negC))
+        return (None,)
 
     # Before and After:
     def preprocess(self,s):
@@ -369,21 +369,20 @@ class QuantizationAdjustment(tf.keras.layers.Layer):
 class Enforce_JPEG_Constraint(tf.keras.layers.Layer):
     def __init__(self,qY,qUV,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
         self.qY = qY
         self.qUV = qUV
         self.W = W
         self.Wt = Wt
     def get_config(self):
-        return {'Yoffset': self.Yoffset, 'qY': self.qY, 'qUV': self.qUV}
+        return {'qY': self.qY, 'qUV': self.qUV}
     def call(self,inputs):
         fx,negC = inputs
         zero = tf.cast(0.,self.dtype)
-        max_value = [negC[channel] + offset + q/2 for (channel,q,offset) in zip(range(negC),(qY,qUV,qUV),(Yoffset,zero,zero))]
-        min_value = [negC[channel] + offset - q/2 for (channel,q,offset) in zip(range(negC),(qY,qUV,qUV),(Yoffset,zero,zero)]
+        max_value = [negC[channel] + q/2. for (channel,q) in zip(range(len(negC)),(self.qY,self.qUV,self.qUV))]
+        min_value = [negC[channel] - q/2. for (channel,q) in zip(range(len(negC)),(self.qY,self.qUV,self.qUV))]
         Wx = self.W(fx)
-        delta_value = [tf.where(Wx[channel] + offset > max_value,max_value + offset - Wx[channel],zero) for (channel,offset) in zip(range(negC),(self.Yoffset,zero,zero))]
-        delta_value = [tf.where(Wz[channel] + offset < min_value,min_value + offset - Wx[channel],zero) for (channel,offset) in zip(range(negC),(self.Yoffset,zero,zero))]
+        delta_value = [tf.where(Wx[channel] > max_value[channel],max_value[channel] - Wx[channel],zero) for channel in range(len(negC))]
+        delta_value = [tf.where(Wx[channel] < min_value[channel],min_value[channel] - Wx[channel],zero) for channel in range(len(negC))]
         return self.Wt(delta_value)
 
 class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
@@ -392,6 +391,6 @@ class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
         self.enforce_jpeg_constraint = Enforce_JPEG_Constraint(qY,qUV,W,Wt,*args,**kwargs)
     def call(self,inputs):
         fx,negC = inputs
-        delta_z = self.enforce_jpeg_constraint(fx,negC)
+        delta_z = self.enforce_jpeg_constraint((fx,negC))
         z = fx + delta_z
-        return (z,z)
+        return z

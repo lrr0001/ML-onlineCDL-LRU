@@ -14,14 +14,14 @@ b_init = 0.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
-steps_per_epoch = 3150
+steps_per_epoch = 2
 step_size = 0.01
-num_of_epochs = 8
+num_of_epochs = 2
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
 modelname = 'ML_LRA_SGD'
-databasename = 'BSDS500/'
+databasename = 'simpleTest/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'

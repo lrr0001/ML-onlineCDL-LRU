@@ -35,10 +35,10 @@ startOffset1 = (16,16)
 startOffset2 = (16,16)
 # load previous parameters
 
-datasetname = 'BSDS500/'
+datasetname = 'simpleTest/'
 dataloadpath = 'data/scratchwork/' + datasetname + 'whole/'
 datasavepath = 'data/scratchwork/' + datasetname + 'patches/'
-fid = open('data/processed/' + datasetname + '/param.pckl','rb')
+fid = open('data/processed/' + datasetname + 'param.pckl','rb')
 python_dict = pkl.load(fid)
 dtype = python_dict['dtype']
 qY = python_dict['qY']

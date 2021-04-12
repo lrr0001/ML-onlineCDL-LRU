@@ -40,11 +40,11 @@ class MultiLayerCSC(optmz.ADMM):
         mu_init = tf.cast(mu_init,dtype=cmplxdtype.real_dtype)
         self.noL = noL
         optmz.ADMM.__init__(self=self,rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
-        self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,name = 'alpha',dtype=dtype)
+        #self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,name = 'alpha',dtype=dtype)
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
-        self.initializeLayers(rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype)
+        self.initializeLayers(rho,mu_init,alpha_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype)
     def get_config(self):
         config_dict = {'complex_dtype': self.cmplxdtype,
                        'num_of_Layers': self.noL,
@@ -56,7 +56,7 @@ class MultiLayerCSC(optmz.ADMM):
                        'record_iteration_stats': self.longitstat}
         return config_dict
 
-    def initializeLayers(self,rho,mu_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype):
+    def initializeLayers(self,rho,mu_init,alpha_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype):
         self.strides = strides
         self.dictObj = []
         self.updateX_layer = []
@@ -67,7 +67,8 @@ class MultiLayerCSC(optmz.ADMM):
 
         self.FFT,self.IFFT,self.FFT_factor = self.build_fft_layers(fftSz,noL)
 
-        self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype)
+        #self.relax_layer = GetRelaxedAx(alpha=tf.cast(self.alpha,dtype=cmplxdtype),dtype=cmplxdtype)
+        self.relax_layer = GetRelaxedAx(alpha=alpha_init,dtype=self.cmplxdtype)
         reversed_updateZ_layer = []
         #self.updateZ_layer = [[],]*(noL - 1)
         self.updateGamma_layer = GetNextIterGamma(dtype=cmplxdtype)
@@ -85,9 +86,10 @@ class MultiLayerCSC(optmz.ADMM):
             self.updateZ_layer.append(reversed_updateZ_layer[noL - 2 - ii])
         self.W = jrf.YUV2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         self.Wt = jrf.JPEG_Coef2YUV(dtype=cmplxdtype.real_dtype)
-        self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
+        self.updatev = jrf.ZUpdate_JPEG_Implicit(qY,qUV,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
+        #self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
         #self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, dtype=cmplxdtype.real_dtype) # could change these 2 so that eta update gets alpha
-        self.updateeta = jrf.GammaUpdate_JPEG(self.alpha,dtype=cmplxdtype.real_dtype)
+        #self.updateeta = jrf.GammaUpdate_JPEG(self.alpha,dtype=cmplxdtype.real_dtype)
         self.qY = qY
         self.qUV = qUV
         
@@ -181,8 +183,8 @@ class MultiLayerCSC(optmz.ADMM):
             prevLagrang = self.evaluateLagrangian(xprev,yprev,uprev,Byprev,negC)
             currLagrang = self.evaluateLagrangian(x,yprev,uprev,Byprev,negC)
             x_improvements.append(prevLagrang - currLagrang)
-            prevRelaxedLagrang = self.evaluateRelaxedLagrangian(x,yprev,uprev,Ax_relaxed,Byprev,negC)
-            currRelaxedLagrang = self.evaluateRelaxedLagrangian(x,y,uprev,Ax_relaxed,By,negC)
+            prevRelaxedLagrang = self.evaluateRelaxedLagrangian(x,yprev,uprev,Ax,Byprev,negC)
+            currRelaxedLagrang = self.evaluateRelaxedLagrangian(x,y,uprev,Ax,By,negC)
             vplusz_Lchange = prevRelaxedLagrang - currRelaxedLagrang
             if self.noL > 1:
                 if self.strides[0] == 2:
@@ -193,12 +195,12 @@ class MultiLayerCSC(optmz.ADMM):
             else:
                 mu = self.updateZ_lastlayer.mu
             vprev,zprev = yprev
-            Bvprev,Bzprev = Byprev
+            Bzprev = Byprev
             etaprev,gammaprev = uprev
             vprev_cropped = self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](vprev),axis=-1))
             augLangVprev = mu/2*self.reconstructionTerm(vprev_cropped,Dx_cropped) + self.jpegConstraint_relaxed(etaprev,Bvprev,negC)
             v,z = y
-            Bv,Bz = By
+            Bz = By
             eta,gamma = u
             v_cropped = self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](v),axis=-1))
             augLangVcurr = mu/2*self.reconstructionTerm(v_cropped,Dx_cropped) + self.jpegConstraint_relaxed(etaprev,Bv,negC)
@@ -219,17 +221,21 @@ class MultiLayerCSC(optmz.ADMM):
         s_LF,QWs = negC
         for layer in range(self.noL - 1,0,-1):
             x,Ax = self.xstep_trunc(y,u,By,negC,layer)
+            #u = self.relax_trunc(u,Ax,By,negC,layer)
             Ax_relaxed = self.relax_trunc(Ax,By,negC,layer)
             y,By = self.ystep_trunc(x,u,Ax_relaxed,negC,layer,frozen=False)
+            #y,By = self.ystep_trunc(x,u,Ax,negC,layer,frozen=False)
+            #u = self.ustep_trunc(u,Ax,By,negC,layer)
             u = self.ustep_trunc(u,Ax_relaxed,By,negC,layer)
 
         x,Ax = self.xstep_trunc(y,u,By,negC,layer=0)
         #Ax_relaxed = self.relax(Ax,By,negC)
         #y,By = self.ystep(x,u,Ax_relaxed,negC)
-        #v,z = y
+        v,z = y
         #s_LF,QWs = negC
         Dx = self.IFFT[0](self.dictObj[0].dmul(x[0]))
-        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,itstats)
+        vreal = self.IFFT[0](v)
+        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,self.cropAndMerge.crop(tf.squeeze(vreal,axis=-1) + s_LF)),itstats)
 
     def get_b_shape(self,fftSz,M):
         #return [1,fftSz[0],fftSz[1],M,1,]
@@ -263,23 +269,24 @@ class MultiLayerCSC(optmz.ADMM):
         return x,Ax
     def init_y(self,s,x,Ax,negC):
         Azero,Ax_layers = Ax
-        v,Bv = self.vinit(x[0],negC)
+        v = self.vinit(x[0],negC)
         z = []
         for ii in range(self.noL - 1):
             z.append(self.zinit(xnext=x[ii + 1],Ax=Ax_layers[ii],layer=ii))
         z.append(self.zinit_last(Ax=Ax_layers[self.noL - 1]))
         y = (v,z)
-        By = (Bv,z)
+        By = z
         return y,By
     def init_u(self,s,Ax,By,negC):
         Azero,Ax_layers = Ax
-        Bv,Bz = By
+        Bz = By
         gamma = []
         for ii in range(self.noL):
             gamma.append(self.gammainit(Ax_layers[ii],Bz[ii],ii))
         s_LF,QWs = negC
-        eta = self.etainit(Bv,QWs)
-        return eta,gamma
+        #eta = self.etainit(Bv,QWs)
+        #return eta,gamma
+        return gamma
 
 
     # High-level Update Functions for each iteration (x,y,u,Ax,By)
@@ -297,6 +304,9 @@ class MultiLayerCSC(optmz.ADMM):
         #return x,(0.,x)
     def relax(self,Ax,By,negC):
         return self.relax_trunc(Ax,By,negC,layer=self.noL)
+
+    #def relax(self,u,Ax,By,negC):
+    #    return self.relax_trunc(u,Ax,By,negC,layer=self.noL)
         #Azero,x = Ax
         #s_LF,QWs = negC
         #rootmux = []
@@ -308,18 +318,25 @@ class MultiLayerCSC(optmz.ADMM):
         #return AzeroplusC,rootmux
     def ystep(self,x,u,Ax_relaxed,negC):
         # It is good practice to avoid code redundancy, but here the last layer is distinct from ystep_trunc. y_step trunc does not freeze the dictionary weights and also does not use updateZlast. If-else logic could resolve these distinctions, but I find it clearer to leave these as two separate functions.
-        eta,gamma = u
+        #eta,gamma = u
+        gamma = u
         AzeroplusC,Ax_layers = Ax_relaxed
         z = []
         for ii in range(self.noL - 1):
             z.append(self.updateZ(x_nextlayer=x[ii + 1],Ax_relaxed=Ax_layers[ii],gamma_scaled=gamma[ii],layer=ii))
         z.append(self.updateZ_last(Ax_relaxed=Ax_layers[self.noL - 1],gamma_scaled=gamma[self.noL - 1]))
-        v,Bv = self.updateV(x[0],eta,negC)
+        #v,Bv = self.updateV(x[0],eta,negC)
+        v = self.updateV(x[0],negC)
         y = (v,z)
-        By = (Bv,z)
+        #By = (Bv,z)
+        By = z
         return y,By
     def ustep(self,u,Ax_relaxed,By,negC):
         return self.ustep_trunc(u,Ax_relaxed,By,negC,layer=self.noL)
+
+
+
+
         #eta,gamma = u
         #AzeroplusC,Ax_layers = Ax_relaxed
         #Bv,z = By
@@ -331,7 +348,8 @@ class MultiLayerCSC(optmz.ADMM):
 
     def xstep_trunc(self,y,u,By,negC,layer):
         v,z = y
-        eta,gamma = u
+        #eta,gamma = u
+        gamma = u
         x = []
         x.append(self.updateX(z_prevlayer=v,z=z[0],gamma_scaled = gamma[0],layer=0))
         for ii in range(1,layer + 1):
@@ -344,33 +362,55 @@ class MultiLayerCSC(optmz.ADMM):
         Azero,x = Ax
         s_LF,QWs = negC
         rootmux = []
-        Bv,z = By
+        #Bv,z = By
+        z = By
         for ii in range(layer):
             rootmux.append(self.relax_layers(x[ii],z[ii],ii))
+            
         #AzeroplusC = self.relax_zero(Bv,QWs)
         AzeroplusC = None
         return AzeroplusC,rootmux
+
+    #def relax_trunc(self,u,Ax,By,negC,layer):
+    #    #eta,gamma = u
+    #    gamma = u
+    #    AzeroplusC,Ax_layers = Ax
+    #    #Bv,z = By
+    #    z = By
+    #    for ii in range(layer):
+    #        gamma[ii] = self.relax_layers(gamma[ii],z[ii],Ax_layers[ii],ii)
+    #    #s_LF,QWs = negC
+    #    #eta = self.updateEta(eta,Bv,QWs)
+    #    #return eta,gamma
+    #    return gamma        
+
     def ystep_trunc(self,x,u,Ax_relaxed,negC,layer,frozen=True):
-        eta,gamma = u
+        #eta,gamma = u
+        gamma = u
         AzeroplusC,Ax_layers = Ax_relaxed
         z = []
         for ii in range(layer - 1):
             z.append(self.updateZ(x_nextlayer=x[ii + 1],Ax_relaxed=Ax_layers[ii],gamma_scaled=gamma[ii],layer=ii))
         z.append(self.updateZ(x_nextlayer=x[layer],Ax_relaxed=Ax_layers[layer - 1],gamma_scaled=gamma[layer - 1],layer=layer - 1,frozen=frozen))
         #z.append(self.updateZ_last(Ax_relaxed=Ax_layers[self.noL - 1],gamma_scaled=gamma[self.noL - 1]))
-        v,Bv = self.updateV(x[0],eta,negC)
+        #v,Bv = self.updateV(x[0],eta,negC)
+        v= self.updateV(x[0],negC)
         y = (v,z)
-        By = (Bv,z)
+        #By = (Bv,z)
+        By = z
         return y,By
     def ustep_trunc(self,u,Ax_relaxed,By,negC,layer):
-        eta,gamma = u
+        #eta,gamma = u
+        gamma = u
         AzeroplusC,Ax_layers = Ax_relaxed
-        Bv,z = By
+        #Bv,z = By
+        z = By
         for ii in range(layer):
             gamma[ii] = self.updateGamma(gamma[ii],z[ii],Ax_layers[ii],ii)
         s_LF,QWs = negC
-        eta = self.updateEta(eta,Bv,QWs)
-        return eta,gamma
+        #eta = self.updateEta(eta,Bv,QWs)
+        #return eta,gamma
+        return gamma 
 
     #High-level Langrangian Evalaluation Functions
     def evaluateLagrangian(self,x,y,u,By,negC):
@@ -484,19 +524,20 @@ class MultiLayerCSC(optmz.ADMM):
         Dx = tf.squeeze(Dx,axis=-1)
         croppedDx = self.cropAndMerge.crop(Dx)
         s_LF,QWs = negC
-        vpluss_LF,Bv = self.updatev((croppedDx + s_LF,[0.,0.,0.],QWs))
+        #vpluss_LF,Bv = self.updatev((croppedDx + s_LF,[0.,0.,0.],QWs))
+        vpluss_LF = self.updatev((croppedDx + s_LF,QWs))
         vpremerge = vpluss_LF - s_LF
         v = self.cropAndMerge.merge((vpremerge,Dx))
         v = util.addDim(v)
-        return (self.FFT[0](v),Bv) 
+        return self.FFT[0](v)#(self.FFT[0](v),Bv) 
     def zinit(self,xnext,Ax,layer):     
         return self.updateZ(xnext,Ax,tf.reshape(tf.cast(0.,tf.as_dtype(self.cmplxdtype)),(1,1,1,1,1)),layer)
     def zinit_last(self,Ax):
         return self.updateZ_last(Ax,tf.reshape(tf.cast(0.,tf.as_dtype(self.cmplxdtype)),(1,1,1,1,1)))
     def gammainit(self,Ax,Bz,layer):
         return self.updateGamma(tf.cast(0.,tf.as_dtype(self.cmplxdtype)),Bz,Ax,layer)
-    def etainit(self,Bv,QWs):
-        return self.updateEta([0.,0.,0.],Bv,QWs)
+    #def etainit(self,Bv,QWs):
+    #    return self.updateEta([0.,0.,0.],Bv,QWs)
 
 
     # Low-level Update Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
@@ -519,10 +560,23 @@ class MultiLayerCSC(optmz.ADMM):
         else:
             z_over_R = z
         return self.relax_layer((x,z_over_R))
+
+
+    #def relax_layers(self,u,x,z,layer):
+    #    gamma_scaled = u
+    #    if layer < self.noL - 1:
+    #        z_over_R = self.dictObj[layer].divide_by_R(z)
+    #    else:
+    #        z_over_R = z
+    #    return self.updateGamma_layer((gamma_scaled,tf.cast(self.alpha - 1.,self.cmplxdtype)*z_over_R,tf.cast(self.alpha - 1.,self.cmplxdtype)*x))
+
+
+
     def relax_zero(self,Bv,negC):
         raise NotImplementedError
         return self.relax0((negC,Bv))
-    def updateV(self,x_0,eta_over_rho,negC,frozen=True):
+    #def updateV(self,x_0,eta_over_rho,negC,frozen=True):
+    def updateV(self,x_0,negC,frozen=True):
         if frozen:
             Dx = self.IFFT[0](self.dictObj[0].dmul.freezeD(x_0))
         else:
@@ -530,10 +584,11 @@ class MultiLayerCSC(optmz.ADMM):
         # It might be helpful to build an object to couple cropping and padding so that it is never messed up. Best if this is done outside, because the cropping function can be used to get QWs.
         Dx = tf.squeeze(Dx,axis=-1) # add tf.crop_to_bounding_box here.
         s_LF,QWs = negC
-        vpluss_LF,Bv = self.updatev((self.cropAndMerge.crop(Dx) + s_LF,eta_over_rho,QWs))
+        #vpluss_LF,Bv = self.updatev((self.cropAndMerge.crop(Dx) + s_LF,eta_over_rho,QWs))
+        vpluss_LF = self.updatev((self.cropAndMerge.crop(Dx) + s_LF,QWs))
         v = self.cropAndMerge.merge((vpluss_LF - s_LF,Dx))
         v = util.addDim(v)
-        return self.FFT[0](v),Bv # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
+        return self.FFT[0](v)#,Bv # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
     def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer,frozen=True):
         assert(layer < self.noL - 1)
         if self.strides[layer] == 2:
@@ -588,8 +643,8 @@ class MultiLayerCSC(optmz.ADMM):
         else:
             z_over_R = z
         return self.updateGamma_layer((gamma_scaled,z_over_R,Ax_relaxed))
-    def updateEta(self,eta_over_rho,Bv,QWs):
-        return self.updateeta((eta_over_rho,Bv,QWs))
+    #def updateEta(self,eta_over_rho,Bv,QWs):
+        #return self.updateeta((eta_over_rho,Bv,QWs))
 
 
     # Low-level augmented Langrangian evaluation:
@@ -675,10 +730,10 @@ class GetRelaxedAx(tf.keras.layers.Layer):
     '''
     def __init__(self,alpha,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.alpha = alpha #tf.Variable(alpha_init,trainable=True)
+        self.alpha = tf.Variable(initial_value=alpha,trainable=True,name = 'alpha',dtype=tf.as_dtype(self.dtype).real_dtype)#alpha #tf.Variable(alpha_init,trainable=True)
     def call(self,inputs):
         x_over_R,z_over_R = inputs
-        return  -(1 - self.alpha)*z_over_R - self.alpha*x_over_R
+        return  -(1 - tf.cast(self.alpha,self.dtype))*z_over_R - tf.cast(self.alpha,self.dtype)*x_over_R
 
 
 
@@ -733,7 +788,8 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         with tf.name_scope(self.name):
             self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
             self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
-        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
 
@@ -745,7 +801,7 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         Dx_nextlayer,Ax_relaxed_plus_gamma_scaled = inputs
         currR = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
         leadingFactor = 1/(self.mu_nextlayer + self.rho*self.mu/currR**2)
-        return leadingFactor*self.relu(self.ifft(tf.cast(self.mu_nextlayer,dtype=self.dtype)*Dx_nextlayer - self.dictObj.divide_by_R(tf.cast(self.rho*self.mu,dtype=self.dtype)*(Ax_relaxed_plus_gamma_scaled))) - self.b)
+        return leadingFactor*self.relu((self.ifft(tf.cast(self.mu_nextlayer,dtype=self.dtype)*Dx_nextlayer - self.dictObj.divide_by_R(tf.cast(self.rho*self.mu,dtype=self.dtype)*Ax_relaxed_plus_gamma_scaled)),self.b))
     def get_config(self):
         return {'rho': self.rho}
 
@@ -765,7 +821,8 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         self.mu = tf.Variable(mu_init,trainable=True,dtype=self.dtype)
         self.dictObj = dictObj
         self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=self.dtype) # Is this an active design decision to avoid dependence on mu?
-        self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
+        #self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
+        self.relu = util.Shrinkage(dtype=self.dtype)
 
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
@@ -790,7 +847,8 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         with tf.name_scope(self.name):
             self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
             self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
-        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
         ppg.PostProcess.add_update(self.mu.name,self._update_mu)
@@ -803,7 +861,7 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
         R = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
-        return self.relu(-self.ifft(Ax_relaxed + gamma_scaled) - R*self.b)
+        return self.relu((-self.ifft(Ax_relaxed + gamma_scaled),R*self.b))
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def __init__(self,rho,mu,dictObj,b,*args,**kwargs):
@@ -812,11 +870,12 @@ class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
         self.dictObj = dictObj
         self.b = b
         self.rho = rho
-        self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
+        #self.relu = tf.keras.layers.ReLU(dtype=self.dtype)
+        self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
     def call(self,inputs):
         Ax_relaxed,gamma_scaled = inputs
         R = util.rotate_dims_left(self.dictObj.divide_by_R.R)
-        return R*self.relu(-Ax_relaxed - gamma_scaled - R*self.b/(self.rho*self.mu))
+        return R*self.relu((-Ax_relaxed - gamma_scaled,R*self.b/(self.rho*self.mu)))
     def get_config(self):
         return {'rho': self.rho}
 
@@ -827,12 +886,14 @@ class GetNextIterZFreq_downsampleTossed(tf.keras.layers.Layer):
         self.dictObj = dictObj
         self.b = b
         self.rho = rho
-        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
     def call(self,inputs):
         Ax_relaxed_plus_gamma_scaled = inputs
         R = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
-        return R*self.relu(self.ifft(Ax_relaxed_plus_gamma_scaled) - R*self.b/(self.rho*self.mu))
+        #return R*self.relu(self.ifft(Ax_relaxed_plus_gamma_scaled) - R*self.b/(self.rho*self.mu))
+        return R*self.relu((self.ifft(Ax_relaxed_plus_gamma_scaled),R*self.b/(self.rho*self.mu)))
     def get_config(self):
         return {'rho': self.rho}
 

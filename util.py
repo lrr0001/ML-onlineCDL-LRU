@@ -149,10 +149,10 @@ class BiasedReLU(tf.keras.layers.Layer):
         x,bias = inputs
         return self.relu(x - bias)
 
-class Shrinkage(tr.keras.layers.Layer):
+class Shrinkage(tf.keras.layers.Layer):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.relu = BiasedReLU(*args,**kwargs)
     def call(self,inputs):
         x,bias = inputs
-        return self.relu(x,bias) - self.relu(-x,bias)
+        return self.relu((x,bias)) - self.relu((-x,bias))

@@ -11,17 +11,17 @@ rho = 1.
 alpha_init = 1.5
 mu_init = 1.
 b_init = 0.
-lraParam = {'n_components': 4}
+n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
-batch_size = 4
-steps_per_epoch = 4
-step_size = 0.1
-num_of_epochs = 3
+batch_size = 1
+steps_per_epoch = 3150
+step_size = 0.01
+num_of_epochs = 8
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
-modelname = 'ML_LRA_'
-databasename = 'simpleTest/'
+modelname = 'ML_LRA_SGD'
+databasename = 'BSDS500/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
@@ -42,6 +42,7 @@ noL = problem_param['noL']
 noc = problem_param['noc']
 datapath = problem_param['datapath']
 trainfile = problem_param['trainfile']
+valfile = problem_param['valfile']
 padding = data_param['padding']
 
 
@@ -72,7 +73,7 @@ def _parse_image_function(example_proto):
     lowpass = restore_double(x['lowpass'])
     return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
 
-raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
+raw_dataset = tf.data.TFRecordDataset([datapath + valfile])
 dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
 
@@ -94,7 +95,7 @@ for (x,y) in dataset_batch:
     break
 
 #   ******** BUILD MODEL ********
-CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],lraParam,noi,noL,cmplxdtype)
+CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
 
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
@@ -107,7 +108,35 @@ reconstruction,itstats = CSC(inputs)
 rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
 import post_process_grad as ppg
-model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
+#model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
+model = tf.keras.Model(inputs,clipped_reconstruction)
+
+
+#   ******** COMPILE AND TRAIN MODEL ********
+import time
+class TimeHistory(tf.keras.callbacks.Callback):
+    def on_train_begin(self, logs={}):
+        self.train_times = []
+
+    def on_test_begin(self, logs={}):
+        self.test_times = []
+
+    def on_test_batch_begin(self, batch, logs={}):
+        self.test_batch_start_time = time.time()
+
+    def on_test_batch_end(self, batch,logs={}):
+        self.test_times.append(time.time() - self.test_batch_start_time)
+
+    def on_epoch_begin(self, batch, logs={}):
+        self.epoch_time_start = time.time()
+
+    def on_epoch_end(self, batch, logs={}):
+        self.train_times.append(time.time() - self.epoch_time_start)
+
+
+model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
+for tv in model.trainable_variables:
+    print(tv.name)
 
 #   ******** COMPILE AND TEST MODEL ********
 mse = tf.keras.metrics.MeanSquaredError(dtype=real_dtype)
