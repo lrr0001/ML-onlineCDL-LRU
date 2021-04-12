@@ -39,7 +39,7 @@ dataPath = 'data/original/' + datasetname
 filelist = os.listdir(dataPath)
 savePath = 'data/scratchwork/' + datasetname + '/whole/'
 #for datatype in ['train/','val/','test/']:
-for datatype in ['train/','val/']:
+for datatype in ['train/','val/','test/']:
     filelist = os.listdir(dataPath + datatype)
     for filename in filelist:
         loadedImg = PIL.Image.open(dataPath + datatype + filename)
