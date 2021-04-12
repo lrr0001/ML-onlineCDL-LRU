@@ -84,8 +84,10 @@ class MultiLayerCSC(optmz.ADMM):
         self.updateZ_layer = []
         for ii in range(noL - 1): # Last shall be first and first shall be last.
             self.updateZ_layer.append(reversed_updateZ_layer[noL - 2 - ii])
-        self.W = jrf.YUV2JPEG_Coef(dtype=cmplxdtype.real_dtype)
-        self.Wt = jrf.JPEG_Coef2YUV(dtype=cmplxdtype.real_dtype)
+        #self.W = jrf.YUV2JPEG_Coef(dtype=cmplxdtype.real_dtype)
+        #self.Wt = jrf.JPEG_Coef2YUV(dtype=cmplxdtype.real_dtype)
+        self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
+        self.Wt = jrf.JPEG_Coef2RGB(dtype=cmplxdtype.real_dtype)
         self.updatev = jrf.ZUpdate_JPEG_Implicit(qY,qUV,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
         #self.updatev = jrf.ZUpdate_JPEG(mu,rho,qY,qUV,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
         #self.relax0 = jrf.Relax_SmoothJPEG(self.alpha, dtype=cmplxdtype.real_dtype) # could change these 2 so that eta update gets alpha

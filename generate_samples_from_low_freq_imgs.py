@@ -7,9 +7,12 @@ def savePatch(coord,lowpass,highpass,raw,padding,patch_size,qY,qUV,Yoffset,datap
     lowpassPatch = lowpass[slice(rowCoord - padding[0][0],rowCoord + patch_size[0] + padding[0][1]),slice(colCoord - padding[1][0],colCoord + patch_size[1] + padding[1][1]),slice(None)]
     #lowpassPatch = lowpass[slice(rowCoord,rowCoord + patch_size[0]),slice(colCoord,colCoord + patch_size[1]),slice(None)]
     rawPatch =  raw[slice(rowCoord,rowCoord + patch_size[0]),slice(colCoord,colCoord + patch_size[1]),slice(None)]
-    W = jrf.YUV2JPEG_Coef(dtype = dtype)
-    Wt = jrf.JPEG_Coef2YUV(dtype = dtype)
-    compressedPatch = Wt(jrf.threeChannelQuantize(W(jrf.RGB2YUV(dtype=dtype)(tf.expand_dims(rawPatch,axis=0))),qY,qUV,Yoffset))
+    #W = jrf.YUV2JPEG_Coef(dtype = dtype)
+    #Wt = jrf.JPEG_Coef2YUV(dtype = dtype)
+    W = jrf.RGB2JPEG_Coef(dtype = dtype)
+    Wt = jrf.JPEG_Coef2RGB(dtype = dtype)
+    #compressedPatch = Wt(jrf.threeChannelQuantize(W(jrf.RGB2YUV(dtype=dtype)(tf.expand_dims(rawPatch,axis=0))),qY,qUV,Yoffset))
+    compressedPatch = Wt(jrf.threeChannelQuantize(W(tf.expand_dims(rawPatch,axis=0)),qY,qUV,Yoffset))
     compressedPatch = tf.squeeze(compressedPatch,axis=0)
     highpassPatch = highpass[slice(rowCoord - padding[0][0],rowCoord + patch_size[0] + padding[0][1]),slice(colCoord - padding[1][0],colCoord + patch_size[1] + padding[1][1]),slice(None)]
     fid_raw = open(datapath + 'raw/' + filename,'wb')
@@ -36,6 +39,7 @@ startOffset2 = (16,16)
 # load previous parameters
 
 datasetname = 'BSDS500/'
+#datasetname = 'simpleTest/'
 dataloadpath = 'data/scratchwork/' + datasetname + 'whole/'
 datasavepath = 'data/scratchwork/' + datasetname + 'patches/'
 fid = open('data/processed/' + datasetname + 'param.pckl','rb')
@@ -57,7 +61,7 @@ import os
 Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype),tf.cast(0.,dtype))
 
 
-
+#for datatype in ['train/','val/']:
 for datatype in ['train/','val/','test/']:
     filelist = os.listdir(dataloadpath + datatype)
     for filename in filelist:

@@ -16,8 +16,10 @@ class Smooth_JPEG(optmz.ADMM):
         super().__init__(rho,alpha,noi,*args,**kwargs)
         self.init_fun()
     def init_fun(self):
-        self.W = YUV2JPEG_Coef(dtype=self.dtype)
-        self.Wt = JPEG_Coef2YUV(dtype=self.dtype)
+        #self.W = YUV2JPEG_Coef(dtype=self.dtype)
+        self.W = RGB2JPEG_Coef(dtype=self.dtype)
+        #self.Wt = JPEG_Coef2YUV(dtype=self.dtype)
+        self.Wt = JPEG_Coef2RGB(dtype=self.dtype)
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
         #self.relaxlayer = Relax_SmoothJPEG(dtype=self.dtype) # move alpha to uupdate
         #self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
@@ -54,8 +56,9 @@ class Smooth_JPEG(optmz.ADMM):
 
     # Before and After:
     def preprocess(self,s):
-        rgb2yuv = RGB2YUV(dtype=self.dtype)
-        return rgb2yuv(s)
+        #rgb2yuv = RGB2YUV(dtype=self.dtype)
+        #return rgb2yuv(s)
+        return s
     def get_output(self,s,y,u,By,negC,itstats):
         ''' Outputs:
                Smoothed image (YUV)
@@ -393,4 +396,6 @@ class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
         fx,negC = inputs
         delta_z = self.enforce_jpeg_constraint((fx,negC))
         z = fx + delta_z
+        delta_z = self.enforce_jpeg_constraint((z,negC)) # for precision
+        z = z + delta_z
         return z

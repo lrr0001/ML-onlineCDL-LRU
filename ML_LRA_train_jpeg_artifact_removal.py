@@ -22,6 +22,7 @@ num_of_epochs = 64
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
 modelname = 'ML_LRA_'
 databasename = 'BSDS500/'
+#databasename = 'simpleTest/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
@@ -70,7 +71,7 @@ def _parse_image_function(example_proto):
     x = tf.io.parse_single_example(example_proto, example_structure)
     highpass = restore_double(x['highpass'])
     lowpass = restore_double(x['lowpass'])
-    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),jrf.RGB2YUV(dtype=real_dtype)(restore_double(x['raw'])))
+    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
 
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
@@ -104,13 +105,14 @@ compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dt
 inputs = (highpass,lowpass,compressed)
 
 reconstruction,reconstruction2,itstats = CSC(inputs)
-rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
-clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
-yuv_reconstruction = jrf.RGB2YUV(dtype=real_dtype)(clipped_reconstruction)
+#rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
+#clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
+clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
+#yuv_reconstruction = jrf.RGB2YUV(dtype=real_dtype)(clipped_reconstruction)
 import post_process_grad as ppg
 #model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
-model = tf.keras.Model(inputs,yuv_reconstruction)
-
+#model = tf.keras.Model(inputs,yuv_reconstruction)
+model = tf.keras.Model(inputs,clipped_reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 import time

@@ -34,8 +34,10 @@ def serialize_example(highpass, lowpass, compressed, raw):
 import os
 #for datatype in ['train','val','test']:
 #    datasetname = 'BSDS500/'
+#datasetname = 'simpleTest/'
 datasetname = 'BSDS500/'
 for datatype in ['train','val','test']:
+#for datatype in ['train','val']:
     datapath = 'data/scratchwork/' + datasetname + 'patches/' + datatype + '/'
     recordpath = 'data/processed/' + datasetname
     recordname = datatype + '.tfrecord'
