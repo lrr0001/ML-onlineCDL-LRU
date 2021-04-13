@@ -76,7 +76,7 @@ def _parse_image_function(example_proto):
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
-dataset_batch = dataset.batch.repeat(8)
+dataset_batch = dataset_batch.repeat(8)
 
 
 for (x,y) in dataset_batch:
