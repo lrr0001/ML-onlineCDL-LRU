@@ -116,8 +116,8 @@ clipped_reconstruction3 = util.clip(a=0.,b = 1.,dtype=real_dtype)(reconstruction
 import post_process_grad as ppg
 #model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 model = tf.keras.Model(inputs,clipped_reconstruction)
-model2 = tf.keras.Model2(inputs,clipped_reconstruction2)
-model3 = tf.keras.Model3(inputs,clipped_reconstruction3)
+model2 = tf.keras.Model(inputs,clipped_reconstruction2)
+model3 = tf.keras.Model(inputs,clipped_reconstruction3)
 
 
 #   ******** COMPILE AND TRAIN MODEL ********
