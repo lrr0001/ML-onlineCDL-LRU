@@ -143,6 +143,8 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
 
 model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
+model2.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
+model3.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
 for tv in model.trainable_variables:
     print(tv.name)
 
