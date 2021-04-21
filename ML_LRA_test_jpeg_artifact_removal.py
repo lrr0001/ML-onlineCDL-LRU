@@ -20,7 +20,7 @@ num_of_epochs = 8
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
-modelname = 'ML_LRA_SGD'
+modelname = 'ML_LRA_'
 databasename = 'BSDS500/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
@@ -105,11 +105,19 @@ compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dt
 inputs = (highpass,lowpass,compressed)
 
 reconstruction,reconstruction2,itstats = CSC(inputs)
-rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
-clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
+#rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
+clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
+#rgb_reconstruction2 = jrf.YUV2RGB(dtype=real_dtype)(reconstruction2)
+clipped_reconstruction2 = util.clip(a=0.,b = 1.,dtype=real_dtype)(reconstruction2)
+reconstruction3 = (reconstruction + reconstruction2)/2
+clipped_reconstruction3 = util.clip(a=0.,b = 1.,dtype=real_dtype)(reconstruction3)
+
+
 import post_process_grad as ppg
 #model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 model = tf.keras.Model(inputs,clipped_reconstruction)
+model2 = tf.keras.Model2(inputs,clipped_reconstruction2)
+model3 = tf.keras.Model3(inputs,clipped_reconstruction3)
 
 
 #   ******** COMPILE AND TRAIN MODEL ********
@@ -140,20 +148,25 @@ for tv in model.trainable_variables:
 
 #   ******** COMPILE AND TEST MODEL ********
 mse = tf.keras.metrics.MeanSquaredError(dtype=real_dtype)
-rmse = tf.keras.metrics.RootMeanSquaredError(dtype=real_dtype)
-metrics = [mse,rmse]
+metrics = [mse]
 model.compile(loss = tf.keras.losses.MSE,weighted_metrics=metrics,run_eagerly=False)
 fid = open(experimentpath + timesname,'rb')
 times = pkl.load(fid)
 fid.close()
 results = []
+results2 = []
+results3 = []
 model.load_weights(experimentpath + modelfilename)
 results.append(model.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
+results2.append(model2.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
+results3.append(model3.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
 for epoch in range(num_of_epochs):
     model.load_weights(experimentpath + checkpointfilename.format(epoch=epoch + 1))
     results.append(model.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
+    results2.append(model2.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
+    results3.append(model3.evaluate(x = dataset_batch,steps = steps_per_epoch,return_dict=True))
 
 fid = open(experimentpath + modelname + 'results.pkl','wb')
-pkl.dump((times,results),fid)
+pkl.dump((times,results,results2,results3),fid)
 fid.close()
 

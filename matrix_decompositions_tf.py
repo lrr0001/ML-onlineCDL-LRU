@@ -232,28 +232,51 @@ class dictionary_object2D_init_full(dictionary_object2D_init):
         return None
 
 
-#@tf.custom_gradient
-#def _gradient_trick(y,Df):
-#    def grad(dg):
-#        halfway = tf.linalg.triangular_solve(matrix=self.L,rhs=dg,lower=True)
-#        ainvdg = tf.linalg.triangular_solve(matrix=self.L,rhs=halfway,lower=True,adjoint=True)
-#        if self.wdbry:
-#            Dhy = self.dhmul(y)
-#            DhyH = util.conj_tp(Dhy)
-#            Dhainvdg = self.dhmul(ainvdg)
-#            DhainvdgH = util.conj_tp(Dhainvdg)
-#            gradD = -ainvdg*DhyH - y*DhainvdgH
-#        else:
-#            Dy = self.dmul(y)
-#            Dainvdg = self.dmul(ainvdg)
-#            yH = util.conj_tp(y)
-#            ainvdgH = util.conj_tp(ainvdg)
-#            gradD = -Dy*ainvdgH - Dainvdg*yH
-#        return (tf.identity(dg),tf.math.reduce_sum(input_tensor=gradD,axis=0,keepdims=True))
-#    return tf.identity(y),grad
-#    def grad(dg):
-#        return (tf.identity(dg),Df)
-#    return tf.identity(y),grad
+
+# ***************** TIGHT-FRAME CLASSES *****************
+class dictionary_object2D_tight_frame_init(tf.keras.layers.Layer):
+    def __init__(self,D,rho,objname,*args,**kwargs):
+        super().__init__(name=objname,dtype = D.dtype,*args,**kwargs)
+        self.rho = rho
+        self.D = tf.Variable(initial_value = D,trainable=True)
+        self.dmul = Conv2D(D = self.D,dtype = self.dtype)
+        self.dhmul = Conv2D_Transpose(D=self.D,dtype = self.dtype)
+        self.qinv = Tight_Frame_Inverse(self.rho,self.D,self.dmul,self.dhmul,dtype=self.dtype)
+        self.qinvDT = Tight_Frame_Inverse_DT(self.rho,self.D,self.dhmul,dtype=self.dtype)
+    def call(self,inputs):
+        zcurr,zprev = inputs
+        return self.qinv(zcurr) + self.qinvDT(zprev)
+
+class Conv2D(tf.keras.layers.Layer):
+    def __init__(self,D,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.D = D
+    def call(self,inputs):
+        return tf.nn.conv2d(input = inputs,filters = self.D,padding='SAME')
+
+class Conv2D_Transpose(Conv2D):
+    def call(self,inputs):
+        return tf.nn.conv2d_transpose(input = inputs,filters = self.D,output_shape = inputs.shape, padding= 'SAME')
+
+class Tight_Frame_Inverse(tf.keras.layers.Layer):
+    def __init__(self,rho,D,dmul,dhmul,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.rho = rho
+        self.dmul = dmul
+        self.dhmul = dhmul
+    def call(self,inputs):
+        return inputs - 1./(self.rho + 1.)*dhmul(dmul(inputs))
+
+class Tight_Frame_Inverse_DT(tf.keras.layers.Layer):
+    def __init__(self,rho,D,dhmul,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.rho = rho
+        self.dhmul = dhmul
+    def call(self,inputs):
+        return 1./(self.rho + 1.)*self.dhmul(inputs)
+
+
+# *******************BACK TO OUR MAIN PROGRAMMING**************************************
 
 
 class Solve_Inverse(tf.keras.layers.Layer):
