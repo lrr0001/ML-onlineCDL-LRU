@@ -120,3 +120,62 @@ class ADMM_Relaxed(tf.keras.layers.Layer):
         for ii in range(self.noi):
             y,u,By,itstats = self.solvestep(y,u,By,negC,itstats)
         return self.get_output(s,y,u,By,negC,itstats)
+
+
+class FISTA(tf.keras.layers.Layer):
+    def __init__(self,L,noi,momweight,*args,**kwargs):
+        self.L = L
+        self.noi = noi
+        self.momweight = momweight
+        super().__init__(*args,**kwargs)
+
+    # These initializations happen once per input (negC,y,By,u):
+    def init_vars(self,r,s):
+        negC = self.get_negative_C(s)
+        z = self.init_z(s)
+        x = self.init_x(s,z)
+        r = self.init_r()
+        itstats = self.init_itstats(r,s,x,z)
+        return r,x,z,itstats
+
+    def get_negative_C(self,s):
+        raise NotImplementedError
+    def init_z(self,s):
+        raise NotImplementedError
+    def init_x(self,s,z):
+        raise NotImplementedError
+    def init_r(self):
+        r = 1.
+    def init_itstats(self,s,x,z):
+        return []
+
+    # iterative steps:
+    def gradstep(self,x):
+        raise NotImplementedError
+    def proxstep(self,z):
+        raise NotImplementedError
+    def momstep(self,r,x,z):
+        raise NotImplementedError
+    def itstats_record(self,r,x,z,itstats):
+        return itstats
+    def solvestep(self,r,s,x,z,itstats):
+        z = self.gradstep(x)
+        z = self.proxstep(z)
+        r,x = self.momstep(r,x,z)
+        itstats = self.itstats_record(r,x,z,itstats)
+        return r,x,z,itstats
+
+    # Before and After:
+    def preprocess(self,s):
+        return s
+    def get_output(self,r,s,x,z,itstats):
+        raise NotImplementedError
+
+    # The Call function    
+    def call(self,r,s):
+        s = self.preprocess(s)
+        r,x,z,itstats = self.init_vars(r,s)
+        for ii in range(self.noi):
+            r,x,z,itstats = self.solvestep(r,s,x,z,itstats)
+        return self.get_output(r,s,x,z,itstats)
+
