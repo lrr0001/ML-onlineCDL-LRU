@@ -55,11 +55,19 @@ class ADMM(tf.keras.layers.Layer):
 
     # The Call function    
     def call(self,s):
+        s,y,u,By,negC,itstats = self.solve(s)
+        return self.get_output(s,y,u,By,negC,itstats)
+
+    def solve(self,s):
         s = self.preprocess(s)
         y,u,By,negC,itstats = self.init_vars(s)
         for ii in range(self.noi):
             y,u,By,itstats = self.solvestep(y,u,By,negC,itstats)
-        return self.get_output(s,y,u,By,negC,itstats)
+        return s,y,u,By,negC,itstats
+
+    def solve_coef(self,s):
+        s,y,u,By,negC,itstats = self.solve(s)
+        return y
 
 class ADMM_Relaxed(tf.keras.layers.Layer):
     def __init__(self,rho,alpha,noi,*args,**kwargs):
@@ -123,44 +131,43 @@ class ADMM_Relaxed(tf.keras.layers.Layer):
 
 
 class FISTA(tf.keras.layers.Layer):
-    def __init__(self,L,noi,momweight,*args,**kwargs):
+    def __init__(self,L,noi,*args,**kwargs):
         self.L = L
         self.noi = noi
-        self.momweight = momweight
         super().__init__(*args,**kwargs)
 
     # These initializations happen once per input (negC,y,By,u):
-    def init_vars(self,r,s):
+    def init_vars(self,s):
         negC = self.get_negative_C(s)
-        z = self.init_z(s)
-        x = self.init_x(s,z)
+        z = self.init_z(s,negC)
+        x = self.init_x(s,z,negC)
         r = self.init_r()
-        itstats = self.init_itstats(r,s,x,z)
-        return r,x,z,itstats
+        itstats = self.init_itrstats(r,s,x,z)
+        return r,x,z,negC,itstats
 
     def get_negative_C(self,s):
         raise NotImplementedError
-    def init_z(self,s):
+    def init_z(self,s,negC):
         raise NotImplementedError
-    def init_x(self,s,z):
+    def init_x(self,s,z,negC):
         raise NotImplementedError
     def init_r(self):
-        r = 1.
-    def init_itstats(self,s,x,z):
+        r = tf.Variable(1.,trainable = False)
+    def init_itrstats(self,r,s,x,z):
         return []
 
     # iterative steps:
     def gradstep(self,x):
         raise NotImplementedError
-    def proxstep(self,z):
+    def proxstep(self,z,negC):
         raise NotImplementedError
     def momstep(self,r,x,z):
         raise NotImplementedError
     def itstats_record(self,r,x,z,itstats):
         return itstats
-    def solvestep(self,r,s,x,z,itstats):
+    def solvestep(self,r,s,x,z,negC,itstats):
         z = self.gradstep(x)
-        z = self.proxstep(z)
+        z = self.proxstep(z,negC)
         r,x = self.momstep(r,x,z)
         itstats = self.itstats_record(r,x,z,itstats)
         return r,x,z,itstats
@@ -168,14 +175,20 @@ class FISTA(tf.keras.layers.Layer):
     # Before and After:
     def preprocess(self,s):
         return s
-    def get_output(self,r,s,x,z,itstats):
+    def get_output(self,r,s,x,z,negC,itstats):
         raise NotImplementedError
 
     # The Call function    
-    def call(self,r,s):
-        s = self.preprocess(s)
-        r,x,z,itstats = self.init_vars(r,s)
-        for ii in range(self.noi):
-            r,x,z,itstats = self.solvestep(r,s,x,z,itstats)
-        return self.get_output(r,s,x,z,itstats)
+    def call(self,s):
+        r,s,x,z,negC,itstat = self.solve(s)
+        return self.get_output(r,s,x,z,negC,itstats)
 
+    def solve(self,s):
+        s = self.preprocess(s)
+        r,x,z,negC,itstats = self.init_vars(s)
+        for ii in range(self.noi):
+            r,x,z,itstats = self.solvestep(r,s,x,z,negC,itstats)
+        return r,s,x,z,negC,itstat
+    def solve_coef(self,s):
+        r,s,x,z,negC,itstat = self.solve(s)
+        return z,x

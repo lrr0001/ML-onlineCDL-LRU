@@ -451,12 +451,89 @@ class MultiLayerCSC(optmz.ADMM):
             else:
                 reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer]
         return reconErr
+
+    def get_obj(self,y):
+        return self.data_fid_z(y) + self.penaltyErrors_z(y)
+
+    def data_fid_z(self,y):
+        v,z = y
+        if self.noL > 1:
+            z_curr = self.dictObj[0].divide_by_R(z[0])
+            if self.strides[0] == 2:
+                mu = self.updateZ_layer[0][0].mu
+            #mu = self.updateZ_layer[0]['downsampled'].mu
+            else:
+                mu = self.updateZ_layer[0].mu
+        else:
+            z_curr = z[0]
+            mu = self.updateZ_lastlayer.mu
+        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(z_curr))/self.FFT_factor[0]
+        for layer in range(1,self.noL):
+            if layer < self.noL - 1:
+                z_curr = self.dictObj[layer].divide_by_R(z[layer])
+                if self.strides[layer] == 2:
+                    mu = self.updateZ_layer[layer][0].mu
+                    #mu = self.updateZ_layer[layer]['downsampled'].mu
+                else:
+                    mu = self.updateZ_layer[layer].mu
+            else:
+                mu = self.updateZ_lastlayer.mu
+                z_curr = z[layer]
+            if self.strides[layer - 1] == 2:
+                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul.freezeD(z_curr))/self.FFT_factor[layer]
+            else:
+                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(z_curr))/self.FFT_factor[layer]
+        return reconErr
+    def data_fid_x(self,x,y):
+        v,z = y
+        if self.noL > 1:
+            if self.strides[0] == 2:
+                mu = self.updateZ_layer[0][0].mu
+            #mu = self.updateZ_layer[0]['downsampled'].mu
+            else:
+                mu = self.updateZ_layer[0].mu
+        else:
+            mu = self.updateZ_lastlayer.mu
+        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(x[0]))/self.FFT_factor[0]
+        for layer in range(1,self.noL):
+            if layer < self.noL - 1:
+                if self.strides[layer] == 2:
+                    mu = self.updateZ_layer[layer][0].mu
+                    #mu = self.updateZ_layer[layer]['downsampled'].mu
+                else:
+                    mu = self.updateZ_layer[layer].mu
+            else:
+                mu = self.updateZ_lastlayer.mu
+            if self.strides[layer - 1] == 2:
+                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(x[layer - 1]),self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer] # Multiply x[layer - 1] by R
+            else:
+                reconErr += (mu/2)*self.reconstructionTerm(x[layer - 1],self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer]
+        return reconErr
     def penaltyErrors(self,y):
         v,z = y
         penaltyErr = 0
         for layer in range(self.noL):
             penaltyErr += self.penaltyTerm(self.IFFT[layer](z[layer]),layer)
         return penaltyErr
+
+    def penaltyErrors_x(self,x):
+        penaltyErr = 0
+        for layer in range(self.noL):
+            R = tf.reshape(self.dictObj[layer].divide_by_R.R,shape=(1,1,1,self.dictObj[layer].divide_by_R.R.shape[4],1))
+            penaltyErr += self.penaltyTerm(self.IFFT[layer](R*x[layer]),layer)
+        R = tf.reshape(self.dictObj[-1].divide_by_R.R,shape=(1,1,1,self.dictObj[-1].divide_by_R.R.shape[4],1))
+        penaltyErr += self.penaltyTerm(self.IFFT[-1](R*x[-1]),self.noL - 1)
+        return penaltyErr
+
+    def penaltyErrors_z(self,y):
+        v,z = y
+        penaltyErr = 0
+        for layer in range(self.noL - 1):
+            penaltyErr += self.penaltyTerm(self.IFFT[layer](z[layer]),layer)
+        R = tf.reshape(self.dictObj[-1].divide_by_R.R,shape=(1,1,1,self.dictObj[-1].divide_by_R.R.shape[4],1))
+        penaltyErr += self.penaltyTerm(self.IFFT[-1](R*z_sp[-1]),self.noL - 1)
+        return penaltyErr
+
     def constraintErrors(self,x,y,Ax,By,negC):
         s_LF,QWs = negC
         Bv,Bz = By
@@ -664,9 +741,9 @@ class MultiLayerCSC(optmz.ADMM):
                 b = self.updateZ_layer[layer][4]((self.updateZ_layer[layer][3]((self.updateZ_layer[layer][0].b,self.updateZ_layer[layer][1].b)),self.updateZ_layer[layer][2].b))
                 return tf.math.reduce_sum(tf.math.abs(b*z))
             else:
-                return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer[layer].b*z))
+                return tf.math.reduce_sum(tf.math.abs(self.updateZ_layer[layer].get_lambda(self.rho)*z))
         else:
-            return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.b*tf.math.maximum(z,0.)))/self.rho/self.updateZ_lastlayer.mu
+            return tf.math.reduce_sum(tf.math.abs(self.updateZ_lastlayer.get_lambda(self.rho)*tf.math.maximum(z,0.)))
     def jpegConstraint(self,eta_over_rho,Wv,QWs):
         #aug_cnstrnt_term = [QWz[channel] - QWs[channel] + eta_over_rho[channel] for channel in range(len(QWs))]
         #return self.rho/2*sum([tf.math.reduce_sum(aug_cnstrnt_term[channel]*tf.math.conj(aug_cnstrnt_term[channel])) for channel in range(len(QWs))])
@@ -694,6 +771,23 @@ class MultiLayerCSC(optmz.ADMM):
         sum_of_terms = Ax_relaxed + Bz + gamma_over_rho
         output = rho*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms)
         return tf.cast(output,output.dtype.real_dtype)
+
+    # need to define get_obj and possibly redefine get_coef
+
+
+class Wrap_ML_ADMM(tf.keras.layers.Layer):
+    def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
+        self.admm = MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
+        super().__init__(dtype = self.fista.cmplxdtype.real_dtype,*args,**kwargs)
+    def call(self,inputs):
+        return self.admm.get_coef(inputs)
+
+def Get_Obj(tf.keras.layers.Layer):
+    def __init__(self,ml_csc,*args,**kwargs):
+        self.ml_csc = ml_csc
+        super().__init__(dtype = cmplxdtype,*args,**kwargs)
+    def call(self,inputs):
+        return self.ml_csc.get_obj(inputs)
 
 
 
@@ -805,6 +899,10 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         currR = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
         leadingFactor = 1/(self.mu_nextlayer + self.rho*self.mu/currR**2)
         return leadingFactor*self.relu((self.ifft(tf.cast(self.mu_nextlayer,dtype=self.dtype)*Dx_nextlayer - self.dictObj.divide_by_R(tf.cast(self.rho*self.mu,dtype=self.dtype)*Ax_relaxed_plus_gamma_scaled)),self.b))
+
+    def get_lambda(self,rho):
+        return self.b
+
     def get_config(self):
         return {'rho': self.rho}
 
@@ -850,8 +948,8 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         with tf.name_scope(self.name):
             self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
             self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
-        #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
-        self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        #self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
         ppg.PostProcess.add_update(self.mu.name,self._update_mu)
@@ -865,6 +963,9 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         Ax_relaxed,gamma_scaled = inputs
         R = tf.reshape(self.dictObj.divide_by_R.R,shape=(1,1,1,self.dictObj.divide_by_R.R.shape[4],1))
         return self.relu((-self.ifft(Ax_relaxed + gamma_scaled),R*self.b))
+
+    def get_lambda(self,rho):
+        return self.b/(rho*self.mu)
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def __init__(self,rho,mu,dictObj,b,*args,**kwargs):

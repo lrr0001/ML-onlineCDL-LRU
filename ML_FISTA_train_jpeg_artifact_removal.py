@@ -9,16 +9,16 @@ import util
 
 #   ******** ALGORITHM-SPECIFIC HYPERPARAMETERS ********
 #rho = 1.
-lpstz = 1.
+lpstz = 100.
 #0alpha_init = 1.5
 mu_init = 1.
 b_init = 0.
-n_components = 4
+#n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
-steps_per_epoch = 3150
+steps_per_epoch = 4
 step_size = 0.01
-num_of_epochs = 64
+num_of_epochs = 2
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -98,7 +98,7 @@ for (x,y) in dataset_batch:
 
 #   ******** BUILD MODEL ********
 #CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
-CSC = mlcscf.ML_FISTA(lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,noi,noL,cmplxdtype)
+CSC = mlcscf.ML_FISTA(lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],noi,noL,cmplxdtype)
 
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
