@@ -1,16 +1,21 @@
 import tensorflow as tf
 import util
+import numpy as np
 
 class fft2d(tf.keras.layers.Layer):
     def __init__(self,fftSz,*args,**kwargs):
         self.fftSz = fftSz
+        self.fft_factor = np.prod(self.fftSz)
         super().__init__(*args,autocast=False,**kwargs)
     def fft(self,inputs):
         return tf.signal.rfft2d(input_tensor=inputs,fft_length=self.fftSz)
     def call(self,inputs):
         return self.fft(inputs)
+    def parseval_sum(self,inputs):
+        dc_scaling = tf.one_hot(indices=[[[[0]]]],depth = inputs.shape[2],on_value=1,off_value=2,axis=2,dtype=inputs.dtype)
+        return tf.cast(tf.math.reduce_sum(dc_scaling*inputs*tf.math.conj(inputs)),inputs.dtype.real_dtype)/self.fft_factor
     def get_config(self):
-        return {'fftSz': fftSz}
+        return {'fftSz': self.fftSz,'fft_factor': self.fft_factor}
 
 def _sscf(inputs):
     return tf.transpose(a=inputs,perm=(0,3,4,1,2),conjugate=False)

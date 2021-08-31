@@ -200,12 +200,12 @@ class MultiLayerCSC(optmz.ADMM):
             Bzprev = Byprev
             etaprev,gammaprev = uprev
             vprev_cropped = self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](vprev),axis=-1))
-            augLangVprev = mu/2*self.reconstructionTerm(vprev_cropped,Dx_cropped) + self.jpegConstraint_relaxed(etaprev,Bvprev,negC)
+            augLangVprev = mu/2*self.reconstructionTerm(vprev_cropped,Dx_cropped,0)*self.FFT[0].fft_factor + self.jpegConstraint_relaxed(etaprev,Bvprev,negC)
             v,z = y
             Bz = By
             eta,gamma = u
             v_cropped = self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](v),axis=-1))
-            augLangVcurr = mu/2*self.reconstructionTerm(v_cropped,Dx_cropped) + self.jpegConstraint_relaxed(etaprev,Bv,negC)
+            augLangVcurr = mu/2*self.reconstructionTerm(v_cropped,Dx_cropped,0)*self.FFT[0].fft_factor + self.jpegConstraint_relaxed(etaprev,Bv,negC)
             v_Lchange = augLangVprev - augLangVcurr
             v_improvements.append(v_Lchange)
             vplusz_improvements.append(vplusz_Lchange)
@@ -275,8 +275,10 @@ class MultiLayerCSC(optmz.ADMM):
         v = self.vinit(x[0],negC)
         z = []
         for ii in range(self.noL - 1):
-            z.append(self.zinit(xnext=x[ii + 1],Ax=Ax_layers[ii],layer=ii))
-        z.append(self.zinit_last(Ax=Ax_layers[self.noL - 1]))
+            z.append(tf.cast(util.rotate_dims_left(self.dictObj[ii].divide_by_R.R,5),self.cmplxdtype)*x[ii])
+            #z.append(self.zinit(xnext=x[ii + 1],Ax=Ax_layers[ii],layer=ii))
+        #z.append(self.zinit_last(Ax=Ax_layers[self.noL - 1]))
+        z.append(x[self.noL - 1])
         y = (v,z)
         By = z
         return y,By
@@ -436,7 +438,7 @@ class MultiLayerCSC(optmz.ADMM):
                 mu = self.updateZ_layer[0].mu
         else:
             mu = self.updateZ_lastlayer.mu
-        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(x[0]))/self.FFT_factor[0]
+        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(x[0]),0)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 if self.strides[layer] == 2:
@@ -447,10 +449,13 @@ class MultiLayerCSC(optmz.ADMM):
             else:
                 mu = self.updateZ_lastlayer.mu
             if self.strides[layer - 1] == 2:
-                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer]
+                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul.freezeD(x[layer]), layer)
             else:
-                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer]
+                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(x[layer]), layer)
         return reconErr
+
+    #def get_obj(self,y):
+    #    return self.penaltyErrors_z(y)
 
     def get_obj(self,y):
         return self.data_fid_z(y) + self.penaltyErrors_z(y)
@@ -467,7 +472,9 @@ class MultiLayerCSC(optmz.ADMM):
         else:
             z_curr = z[0]
             mu = self.updateZ_lastlayer.mu
-        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(z_curr))/self.FFT_factor[0]
+        tf.print('first mu: ',mu)
+        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(z_curr),0)
+        #return (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(z_curr), 0)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 z_curr = self.dictObj[layer].divide_by_R(z[layer])
@@ -480,9 +487,10 @@ class MultiLayerCSC(optmz.ADMM):
                 mu = self.updateZ_lastlayer.mu
                 z_curr = z[layer]
             if self.strides[layer - 1] == 2:
-                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul.freezeD(z_curr))/self.FFT_factor[layer]
+                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul.freezeD(z_curr), layer)
             else:
-                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(z_curr))/self.FFT_factor[layer]
+                reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(z_curr),layer)
+            tf.print('mu: ',mu)
         return reconErr
     def data_fid_x(self,x,y):
         v,z = y
@@ -494,7 +502,7 @@ class MultiLayerCSC(optmz.ADMM):
                 mu = self.updateZ_layer[0].mu
         else:
             mu = self.updateZ_lastlayer.mu
-        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(x[0]))/self.FFT_factor[0]
+        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(x[0]),layer=0)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 if self.strides[layer] == 2:
@@ -505,9 +513,9 @@ class MultiLayerCSC(optmz.ADMM):
             else:
                 mu = self.updateZ_lastlayer.mu
             if self.strides[layer - 1] == 2:
-                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(x[layer - 1]),self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer] # Multiply x[layer - 1] by R
+                reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(x[layer - 1]),self.dictObj[layer].dmul.freezeD(x[layer]),layer) # Multiply x[layer - 1] by R
             else:
-                reconErr += (mu/2)*self.reconstructionTerm(x[layer - 1],self.dictObj[layer].dmul.freezeD(x[layer]))/self.FFT_factor[layer]
+                reconErr += (mu/2)*self.reconstructionTerm(x[layer - 1],self.dictObj[layer].dmul.freezeD(x[layer]),layer)
         return reconErr
     def penaltyErrors(self,y):
         v,z = y
@@ -527,11 +535,12 @@ class MultiLayerCSC(optmz.ADMM):
 
     def penaltyErrors_z(self,y):
         v,z = y
+        #return tf.math.reduce_sum(tf.math.abs(v))
         penaltyErr = 0
         for layer in range(self.noL - 1):
             penaltyErr += self.penaltyTerm(self.IFFT[layer](z[layer]),layer)
         R = tf.reshape(self.dictObj[-1].divide_by_R.R,shape=(1,1,1,self.dictObj[-1].divide_by_R.R.shape[4],1))
-        penaltyErr += self.penaltyTerm(self.IFFT[-1](R*z_sp[-1]),self.noL - 1)
+        penaltyErr += self.penaltyTerm(self.IFFT[-1](tf.cast(R,z[-1].dtype)*z[-1]),self.noL - 1)
         return penaltyErr
 
     def constraintErrors(self,x,y,Ax,By,negC):
@@ -728,10 +737,9 @@ class MultiLayerCSC(optmz.ADMM):
 
 
     # Low-level augmented Langrangian evaluation:
-    def reconstructionTerm(self,z,Dx):
+    def reconstructionTerm(self,z,Dx,layer):
         zminusDx = z - Dx
-        output = tf.reduce_sum(tf.math.conj(zminusDx)*zminusDx)
-        return tf.cast(output,output.dtype.real_dtype)
+        return self.FFT[layer].parseval_sum(zminusDx)
     def nonnegativeCheck(self,z):
         assert(tf.all(z >= 0.))
 
@@ -761,33 +769,31 @@ class MultiLayerCSC(optmz.ADMM):
         #QWv = jrf.threeChannelQuantize(Bv,self.qY,self.qUV,Yoffset)
         aug_cnstrnt_term = self.Wt([(-QWs[channel] + QWv[channel] + eta_over_rho[channel])/ds_factor for (channel,ds_factor) in zip(range(len(Bv)),(1.,4.,4.))])
         return self.rho/2*tf.math.reduce_sum(aug_cnstrnt_term*tf.math.conj(aug_cnstrnt_term))
-    def zxConstraint(self,gamma_over_rho,x_over_R,z_over_R):
+    def zxConstraint(self,gamma_over_rho,x_over_R,z_over_R): # There is an error here. The nature of the representation needs to be taken into account when applying Parseval's theorem; the DC component is fine, but everything else is halfed...
         rho = util.complexNum(self.rho)
         sum_of_terms = z_over_R - x_over_R + gamma_over_rho
         output = rho*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms)
         return tf.cast(output,output.dtype.real_dtype)
-    def zxConstraint_relaxed(self,gamma_over_rho,Ax_relaxed,Bz):
+    def zxConstraint_relaxed(self,gamma_over_rho,Ax_relaxed,Bz):  # See zxConstraint error
         rho = util.complexNum(self.rho)
         sum_of_terms = Ax_relaxed + Bz + gamma_over_rho
         output = rho*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms)
         return tf.cast(output,output.dtype.real_dtype)
 
-    # need to define get_obj and possibly redefine get_coef
-
 
 class Wrap_ML_ADMM(tf.keras.layers.Layer):
     def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
         self.admm = MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
-        super().__init__(dtype = self.fista.cmplxdtype.real_dtype,*args,**kwargs)
+        super().__init__(dtype = self.admm.cmplxdtype.real_dtype,*args,**kwargs)
     def call(self,inputs):
-        return self.admm.get_coef(inputs)
+        return self.admm.solve_coef(inputs)
 
-def Get_Obj(tf.keras.layers.Layer):
+class Get_Obj(tf.keras.layers.Layer):
     def __init__(self,ml_csc,*args,**kwargs):
         self.ml_csc = ml_csc
-        super().__init__(dtype = cmplxdtype,*args,**kwargs)
+        super().__init__(dtype = self.ml_csc.admm.cmplxdtype,*args,**kwargs)
     def call(self,inputs):
-        return self.ml_csc.get_obj(inputs)
+        return self.ml_csc.admm.get_obj(inputs)
 
 
 
@@ -901,6 +907,7 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         return leadingFactor*self.relu((self.ifft(tf.cast(self.mu_nextlayer,dtype=self.dtype)*Dx_nextlayer - self.dictObj.divide_by_R(tf.cast(self.rho*self.mu,dtype=self.dtype)*Ax_relaxed_plus_gamma_scaled)),self.b))
 
     def get_lambda(self,rho):
+        tf.print('lambda: ',self.b)
         return self.b
 
     def get_config(self):
@@ -948,7 +955,8 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         with tf.name_scope(self.name):
             self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
             self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
-        self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = util.BiasedReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         #self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
@@ -965,6 +973,7 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         return self.relu((-self.ifft(Ax_relaxed + gamma_scaled),R*self.b))
 
     def get_lambda(self,rho):
+        tf.print('last lambda: ',self.b/(rho*self.mu))
         return self.b/(rho*self.mu)
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):

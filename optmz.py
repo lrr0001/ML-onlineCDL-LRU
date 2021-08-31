@@ -180,7 +180,7 @@ class FISTA(tf.keras.layers.Layer):
 
     # The Call function    
     def call(self,s):
-        r,s,x,z,negC,itstat = self.solve(s)
+        r,s,x,z,negC,itstats = self.solve(s)
         return self.get_output(r,s,x,z,negC,itstats)
 
     def solve(self,s):
@@ -188,7 +188,7 @@ class FISTA(tf.keras.layers.Layer):
         r,x,z,negC,itstats = self.init_vars(s)
         for ii in range(self.noi):
             r,x,z,itstats = self.solvestep(r,s,x,z,negC,itstats)
-        return r,s,x,z,negC,itstat
+        return r,s,x,z,negC,itstats
     def solve_coef(self,s):
         r,s,x,z,negC,itstat = self.solve(s)
-        return z,x
+        return z,x,negC

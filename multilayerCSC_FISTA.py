@@ -110,7 +110,7 @@ class ML_FISTA(optmz.FISTA):
         x = []
         for ii in range(self.noL):
             x.append(self.xinit(z=z_coef[ii],layer=ii))
-        return z_sig,x
+        return self.prox_sigz(z_sig,negC),x
     def init_itrstats(self,r,s,x,z):
         return []
 
@@ -174,11 +174,14 @@ class ML_FISTA(optmz.FISTA):
         zprox = []
         for ii in range(0,layer):
             zprox.append(self.proxZ(z = z_coef[ii],layer=ii))
+        return (self.prox_sigz(z_sig,negC),zprox)
+
+    def prox_sigz(self,z_sig,negC):
         z_sig_s= tf.squeeze(self.IFFT[0](z_sig),axis = -1)
         cropped_z_sig = self.cropAndMerge.crop(z_sig_s)
         sig_prox = self.proxZ_sig(cropped_z_sig + negC[0],negC[1])
         z_sig_prox = self.cropAndMerge.merge((sig_prox - negC[0],z_sig_s))
-        return (self.FFT[0](util.addDim(z_sig_prox)),zprox)
+        return self.FFT[0](util.addDim(z_sig_prox))        
 
     def proxZ(self,z,layer):
         return self.shrinkLayer[layer](z)
@@ -257,11 +260,15 @@ class ML_FISTA(optmz.FISTA):
             z_sp.append(self.IFFT[ll](z_coef[ll]))
         return (self.IFFT[0](z_sig),z_sp)
 
-    def get_obj(self,z):
-        z_sp = self.IFFT_all(z)
-        return data_fid(z_sp) + l1_penalty(z_sp)
+    #def get_obj(self,z):
+    #    z_sp = self.IFFT_all(z)
+    #    return self.data_fid(z_sp) + self.l1_penalty(z_sp)
 
-
+    def get_obj(self,z,negC):
+        z_sig,z_coef = z
+        v = self.prox_sigz(self.dmul[0](z_coef[0]),negC)
+        z_sp = self.IFFT_all((v,z_coef))
+        return self.data_fid(z_sp) + self.l1_penalty(z_sp)
 
     def get_obj_and_cnstr(self,z,negC):
         z_sp = self.IFFT_all(z)
@@ -270,25 +277,31 @@ class ML_FISTA(optmz.FISTA):
     def data_fid(self,z):
         z_sig,z_coef = z
         data_fid_sum = self.data_fid_layer(tf.cast(self.gradfLayers[0].mu,self.cmplxdtype.real_dtype),z_sig,z_coef[0],0)
-        for ll in range(1,self.noL):
+        #return self.data_fid_layer(tf.cast(self.gradfLayers[0].mu,self.cmplxdtype.real_dtype),z_sig,z_coef[0],0)
+        for ll in range(1,self.noL - 1):
             data_fid_sum += self.data_fid_layer(tf.cast(self.gradfLayers[ll - 1].mu,self.cmplxdtype.real_dtype),z_coef[ll - 1],z_coef[ll],ll)
+        data_fid_sum += self.data_fid_layer(tf.cast(self.gradfLastLayer.mu,self.cmplxdtype.real_dtype),z_coef[self.noL - 2],z_coef[self.noL - 1],self.noL - 1)
         return data_fid_sum
 
-    def l1_penalty(self,z): # would really help to have a get lambda function
+    def l1_penalty(self,z):
         z_sig,z_coef = z
-        l1_sum = self.l1_penalty_layer(self.shrinkLayer[0].thrsh*self.gradfLayers[0].mu/self.stepSz,z_coef[0])
-        for ll in range(1,self.noL):
-            l1_sum += self.l1_penalty_nonneglayer(self.shrinkLayer[ll].thrsh*self.gradfLayers[ll].mu/self.stepSz,z_coef[ll])
+        #return tf.math.reduce_sum(tf.math.abs(z_sig))
+        l1_sum = tf.cast(0,self.gradfLayers[0].mu.dtype.real_dtype)
+        for ll in range(0,self.noL - 1):
+            tf.print('lambda[' + str(ll) + ']: ',self.shrinkLayer[ll].thrsh*tf.cast(self.gradfLayers[ll].mu,self.gradfLayers[ll].mu.dtype.real_dtype)/self.stepSz)
+            l1_sum += self.l1_penalty_layer(self.shrinkLayer[ll].thrsh*tf.cast(self.gradfLayers[ll].mu,self.gradfLayers[ll].mu.dtype.real_dtype)/self.stepSz,z_coef[ll])
+        l1_sum += self.l1_penalty_nonneglayer(self.shrinkLayer[self.noL - 1].thrsh*tf.cast(self.gradfLastLayer.mu,self.gradfLastLayer.mu.dtype.real_dtype)/self.stepSz,z_coef[self.noL - 1])
+        tf.print('lambda[' + str(self.noL - 1) + ']: ',self.shrinkLayer[self.noL - 1].thrsh*tf.cast(self.gradfLastLayer.mu,self.gradfLastLayer.mu.dtype.real_dtype)/self.stepSz)
         return l1_sum       
 
     def data_fid_layer(self,mu,z_prevlayer,z_currlayer,layer):
-        return mu/2*tf.math.reduce_sum(tf.math.square(z_prevlayer - self.IFFT[layer](self.dmul[layer](self.FFT[layer](z_currlayer)))),keepdims=True)
+        return mu/2*tf.math.reduce_sum(tf.math.square(z_prevlayer - self.IFFT[layer](self.dmul[layer](self.FFT[layer](z_currlayer)))))
 
     def l1_penalty_layer(self,lmbda,z):
-        return lmbda*tf.math.reduce_sum(tf.math.abs(z),keepdims = True)
+        return lmbda*tf.math.reduce_sum(tf.math.abs(z))
 
-    def l1_penalty_nonneglayer(self,lmdba,z):
-        return lmbda*tf.math.reduce_sum(self.relu(z),keepdims = True)
+    def l1_penalty_nonneglayer(self,lmbda,z):
+        return lmbda*tf.math.reduce_sum(self.relu(z))
 
 
     def nonnegativity_constraint_layer(self,z):
@@ -303,17 +316,18 @@ class ML_FISTA(optmz.FISTA):
 
 class Wrap_ML_FISTA(tf.keras.layers.Layer):
     def __init__(self,lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
-        self.fista = ML_FISTA(lpstz,mu_init_b_init,qY,qUV,cropAndMerge,fftSz,strides,D,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
+        self.fista = ML_FISTA(lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
         super().__init__(dtype = self.fista.cmplxdtype.real_dtype,*args,**kwargs)
     def call(self,inputs):
-        return self.fista.get_coef(inputs)
+        return self.fista.solve_coef(inputs)
 
-def Get_Obj(tf.keras.layers.Layer):
+class Get_Obj(tf.keras.layers.Layer):
     def __init__(self,ml_csc,*args,**kwargs):
         self.ml_csc = ml_csc
-        super().__init__(dtype = cmplxdtype,*args,**kwargs)
+        super().__init__(dtype = self.ml_csc.fista.cmplxdtype,*args,**kwargs)
     def call(self,inputs):
-        return self.ml_csc.get_obj(inputs)
+        x,negC = inputs
+        return self.ml_csc.fista.get_obj(x,negC)
 
 class Gradf_y(tf.keras.layers.Layer):
     def __init__(self,mu0,*args,**kwargs):
@@ -365,7 +379,7 @@ class Shrink(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         self.RELU = util.Shrinkage(dtype = tf.as_dtype(self.dtype).real_dtype)
     def call(self,x):
-        return self.FFT(util.RELU(self.IFFT(x),self.thrsh))
+        return self.FFT(self.RELU((self.IFFT(x),self.thrsh)))
     def get_config(self):
         config_dict = {'threshold': self.thrsh}
         return config_dict
@@ -378,7 +392,7 @@ class BiasedReLU(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
         self.RELU = util.BiasedReLU(dtype = tf.as_dtype(self.dtype).real_dtype)
     def call(self,x):
-        return self.FFT(util.RELU(self.IFFT(x),self.thrsh))
+        return self.FFT(self.RELU((self.IFFT(x),self.thrsh)))
     def get_config(self):
         config_dict = {'threshold': self.thrsh}
         return config_dict

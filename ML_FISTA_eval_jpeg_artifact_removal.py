@@ -8,7 +8,15 @@ import datetime
 import util
 import time
 
+class TimeHistory(tf.keras.callbacks.Callback):
+    def on_predict_begin(self,logs={}):
+        self.predict_times = []
 
+    def on_predict_batch_begin(self,batch,logs={}):
+        self.predict_batch_start_time = time.time()
+        
+    def on_predict_batch_end(self,batch,logs = {}):
+        self.predict_times.append(time.time() - self.predict_batch_start_time)
 
 def test_FISTA_CSC(lpstz,noi,databasename,steps_per_epoch,num_of_epochs):
     #   ******** ALGORITHM-SPECIFIC HYPERPARAMETERS ********
@@ -16,7 +24,7 @@ def test_FISTA_CSC(lpstz,noi,databasename,steps_per_epoch,num_of_epochs):
     #lpstz = 100.
     #alpha_init = 1.5
     mu_init = 1.
-    b_init = 0.
+    b_init = 0.1
     #n_components = 4
     cmplxdtype = tf.complex128 # This should really be elsewhere.
     batch_size = 1
@@ -90,6 +98,7 @@ def test_FISTA_CSC(lpstz,noi,databasename,steps_per_epoch,num_of_epochs):
     #   ******** BUILD MODEL ********
     #CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
     CSC = mlcscf.Wrap_ML_FISTA(lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],noi,noL,cmplxdtype)
+    Get_Obj = mlcscf.Get_Obj(CSC)
 
     # Build Input Layers
     highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
@@ -98,25 +107,17 @@ def test_FISTA_CSC(lpstz,noi,databasename,steps_per_epoch,num_of_epochs):
     compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
     inputs = (highpass,lowpass,compressed)
 
-    z,x = CSC(inputs)
-    output = mlcscf.Get_Opt(CSC,dtype = cmplxdtype)
+    z,x,negC = CSC(inputs)
+    output = Get_Obj((x,negC))
     model = tf.keras.Model(inputs,output)
     model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
     for tv in model.trainable_variables:
         print(tv.name)
 
-    class TimeHistory(tf.keras.callbacks.Callback):
-        def on_predict_begin(self,logs={}):
-            self.predict_times = []
-        
-        def on_predict_batch_begin(self,batch,logs={}):
-            self.predict_batch_start_time = time.time()
-        
-        def on_predict_batch_end(self,batch,logs = {}):
-            self.predict_times.append(time.time() - self.predict_batch_start_time)
-time_callback = TimeHistory()
 
-    outputs = model.predict(x=dataset_batch,steps=num_of_epochs*steps_per_epoch,shuffle=False,verbose=0)
+    time_callback = TimeHistory()
+
+    outputs = model.predict(x=dataset_batch,steps=num_of_epochs*steps_per_epoch,verbose=0,callbacks = [time_callback])
 
     fid = open(experimentpath + timesname,'wb')
     pkl.dump(outputs,fid)
