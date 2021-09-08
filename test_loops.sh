@@ -1,3 +1,4 @@
+#!/bin/sh
 for ii in {-3..3..3}
   do
     for jj in {-4..4..4}
