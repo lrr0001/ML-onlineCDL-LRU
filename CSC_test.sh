@@ -1,3 +1,4 @@
+#!/bin/bash
 databasename='BSDS500/'
 for ii in {0..48..4}
   do
