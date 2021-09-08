@@ -672,3 +672,5 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
     def call(self,inputs):
         R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
         return inputs/R
+    def get_dict(self):
+        return tf.reshape(self.D,self.D.shape[1:])

@@ -457,24 +457,23 @@ class MultiLayerCSC(optmz.ADMM):
     #def get_obj(self,y):
     #    return self.penaltyErrors_z(y)
 
-    def get_obj(self,y):
-        return self.data_fid_z(y) + self.penaltyErrors_z(y)
+    def get_obj(self,y,negC):
+        return self.data_fid_z(y,negC) + self.penaltyErrors_z(y)
 
-    def data_fid_z(self,y):
+    def data_fid_z(self,y,negC):
         v,z = y
         if self.noL > 1:
             z_curr = self.dictObj[0].divide_by_R(z[0])
             if self.strides[0] == 2:
                 mu = self.updateZ_layer[0][0].mu
-            #mu = self.updateZ_layer[0]['downsampled'].mu
             else:
                 mu = self.updateZ_layer[0].mu
         else:
             z_curr = z[0]
             mu = self.updateZ_lastlayer.mu
-        tf.print('first mu: ',mu)
-        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(z_curr),0)
-        #return (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(z_curr), 0)
+        #tf.print('first mu: ',mu)
+        Dx = self.IFFT[0](self.dictObj[0].dmul.freezeD(z_curr))
+        reconErr = (mu/2)*self.reconstructionTerm_sp(self.updateV_subfun(Dx,negC),Dx)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 z_curr = self.dictObj[layer].divide_by_R(z[layer])
@@ -490,10 +489,10 @@ class MultiLayerCSC(optmz.ADMM):
                 reconErr += (mu/2)*self.reconstructionTerm(util.freq_downsample(z[layer - 1]),self.dictObj[layer].dmul.freezeD(z_curr), layer)
             else:
                 reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(z_curr),layer)
-            tf.print('mu: ',mu)
+            #tf.print('mu: ',mu)
         return reconErr
-    def data_fid_x(self,x,y):
-        v,z = y
+
+    def data_fid_x(self,xnegC):
         if self.noL > 1:
             if self.strides[0] == 2:
                 mu = self.updateZ_layer[0][0].mu
@@ -502,7 +501,8 @@ class MultiLayerCSC(optmz.ADMM):
                 mu = self.updateZ_layer[0].mu
         else:
             mu = self.updateZ_lastlayer.mu
-        reconErr = (mu/2)*self.reconstructionTerm(v,self.dictObj[0].dmul.freezeD(x[0]),layer=0)
+        Dx = self.dictObj[0].dmul.freezeD(x[0])
+        reconErr = (mu/2)*self.reconstructionTerm(self.updateV_subfun(Dx,negC),Dx,layer=0)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 if self.strides[layer] == 2:
@@ -667,17 +667,23 @@ class MultiLayerCSC(optmz.ADMM):
     #def updateV(self,x_0,eta_over_rho,negC,frozen=True):
     def updateV(self,x_0,negC,frozen=True):
         if frozen:
-            Dx = self.IFFT[0](self.dictObj[0].dmul.freezeD(x_0))
+            Dx = self.dictObj[0].dmul.freezeD(x_0)
         else:
-            Dx = self.IFFT[0](self.dictObj[0].dmul(x_0))
+            Dx = self.dictObj[0].dmul(x_0)
         # It might be helpful to build an object to couple cropping and padding so that it is never messed up. Best if this is done outside, because the cropping function can be used to get QWs.
+        
+        return self.FFT[0](self.updateV_subfun(self.IFFT[0](Dx),negC))#,Bv # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
+
+    def updateV_subfun(self,Dx,negC):
         Dx = tf.squeeze(Dx,axis=-1) # add tf.crop_to_bounding_box here.
         s_LF,QWs = negC
         #vpluss_LF,Bv = self.updatev((self.cropAndMerge.crop(Dx) + s_LF,eta_over_rho,QWs))
         vpluss_LF = self.updatev((self.cropAndMerge.crop(Dx) + s_LF,QWs))
         v = self.cropAndMerge.merge((vpluss_LF - s_LF,Dx))
         v = util.addDim(v)
-        return self.FFT[0](v)#,Bv # Need to use tf.pad and tf.where to extend v. Formula for padding: sum_l (prod_i from 1 to l stride_i)(kernel_size_l - 1) + whatever necessary to make divisible by the strides.
+        return v
+
+
     def updateZ(self,x_nextlayer,Ax_relaxed,gamma_scaled,layer,frozen=True):
         assert(layer < self.noL - 1)
         if self.strides[layer] == 2:
@@ -740,6 +746,8 @@ class MultiLayerCSC(optmz.ADMM):
     def reconstructionTerm(self,z,Dx,layer):
         zminusDx = z - Dx
         return self.FFT[layer].parseval_sum(zminusDx)
+    def reconstructionTerm_sp(self,z,Dx):
+        return tf.math.reduce_sum(tf.math.square(z - Dx))
     def nonnegativeCheck(self,z):
         assert(tf.all(z >= 0.))
 
@@ -780,6 +788,28 @@ class MultiLayerCSC(optmz.ADMM):
         output = rho*tf.reduce_sum(tf.math.conj(sum_of_terms)*sum_of_terms)
         return tf.cast(output,output.dtype.real_dtype)
 
+    def get_dict(self):
+        D = []
+        for ii in range(self.noL):
+            D.append(self.dictObj[ii].divide_by_R.get_dict())
+        return D
+
+    def get_lambda(self):
+        lmbda = []
+        for ii in range(self.noL - 1):
+             lmdba.append(self.updateZ_layer[ii].get_lambda(self.rho))
+        lmbda.append(self.updateZ_lastlayer.get_lambda(self.rho))
+        return lmbda
+
+    def get_mu(self):
+        mu = []
+        for ii in range(self.noL - 1):
+            mu.append(self.updateZ_layer[ii].mu)
+        mu.append(self.updateZ_lastlayer.mu)
+        return mu
+
+    def get_alpha(self):
+        return self.relax_layer.alpha
 
 class Wrap_ML_ADMM(tf.keras.layers.Layer):
     def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
@@ -793,7 +823,8 @@ class Get_Obj(tf.keras.layers.Layer):
         self.ml_csc = ml_csc
         super().__init__(dtype = self.ml_csc.admm.cmplxdtype,*args,**kwargs)
     def call(self,inputs):
-        return self.ml_csc.admm.get_obj(inputs)
+        x,negC = inputs
+        return self.ml_csc.admm.get_obj(x,negC)
 
 
 
@@ -907,7 +938,7 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         return leadingFactor*self.relu((self.ifft(tf.cast(self.mu_nextlayer,dtype=self.dtype)*Dx_nextlayer - self.dictObj.divide_by_R(tf.cast(self.rho*self.mu,dtype=self.dtype)*Ax_relaxed_plus_gamma_scaled)),self.b))
 
     def get_lambda(self,rho):
-        tf.print('lambda: ',self.b)
+        #tf.print('lambda: ',self.b)
         return self.b
 
     def get_config(self):
@@ -973,7 +1004,7 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         return self.relu((-self.ifft(Ax_relaxed + gamma_scaled),R*self.b))
 
     def get_lambda(self,rho):
-        tf.print('last lambda: ',self.b/(rho*self.mu))
+        #tf.print('last lambda: ',self.b/(rho*self.mu))
         return self.b/(rho*self.mu)
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):

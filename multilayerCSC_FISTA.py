@@ -44,8 +44,8 @@ class ML_FISTA(optmz.FISTA):
 
         self.shrinkLayer = []
         for ll in range(noL - 1):
-            self.shrinkLayer.append(Shrink(tf.cast(lmbd/self.gradfLayers[ll].mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[ll],self.FFT[ll],dtype = self.cmplxdtype,name = 'shrink_' + str(ll)))
-        self.shrinkLayer.append(BiasedReLU(tf.cast(lmbd/self.gradfLastLayer.mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[noL - 1],self.FFT[noL - 1],dtype = self.cmplxdtype,name = 'shrink_' + str(noL - 1)))
+            self.shrinkLayer.append(Shrink(tf.cast(lmbd/self.gradfLayers[ll].mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[ll],self.FFT[ll],dtype = self.cmplxdtype,name = 'shrink_' + str(ll))) # If mu was properly typed, casting my not be necessary
+        self.shrinkLayer.append(BiasedReLU(tf.cast(lmbd/self.gradfLastLayer.mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[noL - 1],self.FFT[noL - 1],dtype = self.cmplxdtype,name = 'shrink_' + str(noL - 1)))  # if mu was properly typed, casting my not be necessary
         self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         self.Wt = jrf.JPEG_Coef2RGB(dtype=cmplxdtype.real_dtype)
         self.proxy = jrf.ZUpdate_JPEG_Implicit(qY,qUV,self.W,self.Wt,dtype = self.cmplxdtype.real_dtype)
@@ -90,7 +90,6 @@ class ML_FISTA(optmz.FISTA):
     def init_r(self):
         r = 1.
         r = tf.cast(r,self.cmplxdtype)
-        print(r.dtype)
         return r
 
     def init_z(self,s,negC):
@@ -177,11 +176,14 @@ class ML_FISTA(optmz.FISTA):
         return (self.prox_sigz(z_sig,negC),zprox)
 
     def prox_sigz(self,z_sig,negC):
-        z_sig_s= tf.squeeze(self.IFFT[0](z_sig),axis = -1)
+        return self.FFT[0](self.prox_sigz_sp(self.IFFT[0](z_sig),negC))
+
+    def prox_sigz_sp(self,z_sig,negC):
+        z_sig_s= tf.squeeze(z_sig,axis = -1)
         cropped_z_sig = self.cropAndMerge.crop(z_sig_s)
         sig_prox = self.proxZ_sig(cropped_z_sig + negC[0],negC[1])
         z_sig_prox = self.cropAndMerge.merge((sig_prox - negC[0],z_sig_s))
-        return self.FFT[0](util.addDim(z_sig_prox))        
+        return util.addDim(z_sig_prox)
 
     def proxZ(self,z,layer):
         return self.shrinkLayer[layer](z)
@@ -253,49 +255,53 @@ class ML_FISTA(optmz.FISTA):
         z = self.gradstep_trunc(x,frzD=False,layer=-1)
         return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](z[0]),axis=-1)) + s_LF,itstats)
 
-    def IFFT_all(self,z):
-        z_sig,z_coef = z
+    def IFFT_all(self,z_coef):
+        #z_sig,z_coef = z
         z_sp = []
         for ll in range(self.noL):
             z_sp.append(self.IFFT[ll](z_coef[ll]))
-        return (self.IFFT[0](z_sig),z_sp)
+        return z_sp
 
     #def get_obj(self,z):
     #    z_sp = self.IFFT_all(z)
     #    return self.data_fid(z_sp) + self.l1_penalty(z_sp)
 
-    def get_obj(self,z,negC):
+    def get_zsp_Dz0_v(self,z,negC):
         z_sig,z_coef = z
-        v = self.prox_sigz(self.dmul[0](z_coef[0]),negC)
-        z_sp = self.IFFT_all((v,z_coef))
-        return self.data_fid(z_sp) + self.l1_penalty(z_sp)
+        Dz0 = self.IFFT[0](self.dmul[0](z_coef[0]))
+        z_sp = self.IFFT_all(z_coef)
+        v = self.prox_sigz_sp(Dz0,negC)
+        return z_sig,v,Dz0,z_coef,z_sp
+
+    def get_obj(self,z,negC):
+        z_sig,v,Dz0,z_coef,z_sp = self.get_zsp_Dz0_v(z,negC)
+        return self.sig_recon_err(v,Dz0) + self.data_fid(z_coef,z_sp) + self.l1_penalty(z_sp)
+
+    def sig_recon_err(self,v,Dz0):
+        return self.gradfLayers[0].mu/2*tf.math.reduce_sum(tf.math.square(v - Dz0))
 
     def get_obj_and_cnstr(self,z,negC):
-        z_sp = self.IFFT_all(z)
-        return data_fid(z_sp) + l1_penalty(z_sp),self.quantization_constraint(z_sp[0],negC)
+        z_sig,v,Dz0,z_coef,z_sp
+        return self.sig_recon_err(v,Dz0) + self.data_fid(z_coef,z_sp) + l1_penalty(z_sp),self.quantization_constraint(z_sig,negC)
 
-    def data_fid(self,z):
-        z_sig,z_coef = z
-        data_fid_sum = self.data_fid_layer(tf.cast(self.gradfLayers[0].mu,self.cmplxdtype.real_dtype),z_sig,z_coef[0],0)
-        #return self.data_fid_layer(tf.cast(self.gradfLayers[0].mu,self.cmplxdtype.real_dtype),z_sig,z_coef[0],0)
+    def data_fid(self,z_coef,z_sp): 
+        data_fid_sum = tf.cast(0,self.cmplxdtype.real_dtype)
         for ll in range(1,self.noL - 1):
-            data_fid_sum += self.data_fid_layer(tf.cast(self.gradfLayers[ll - 1].mu,self.cmplxdtype.real_dtype),z_coef[ll - 1],z_coef[ll],ll)
-        data_fid_sum += self.data_fid_layer(tf.cast(self.gradfLastLayer.mu,self.cmplxdtype.real_dtype),z_coef[self.noL - 2],z_coef[self.noL - 1],self.noL - 1)
+            data_fid_sum += self.data_fid_layer(self.gradfLayers[ll - 1].mu,z_sp[ll - 1],z_coef[ll],ll)
+        data_fid_sum += self.data_fid_layer(self.gradfLastLayer.mu,z_sp[self.noL - 2],z_coef[self.noL - 1],self.noL - 1)
         return data_fid_sum
 
-    def l1_penalty(self,z):
-        z_sig,z_coef = z
-        #return tf.math.reduce_sum(tf.math.abs(z_sig))
-        l1_sum = tf.cast(0,self.gradfLayers[0].mu.dtype.real_dtype)
+    def l1_penalty(self,z_coef):
+        l1_sum = tf.cast(0,self.gradfLayers[0].mu.dtype)
         for ll in range(0,self.noL - 1):
-            tf.print('lambda[' + str(ll) + ']: ',self.shrinkLayer[ll].thrsh*tf.cast(self.gradfLayers[ll].mu,self.gradfLayers[ll].mu.dtype.real_dtype)/self.stepSz)
-            l1_sum += self.l1_penalty_layer(self.shrinkLayer[ll].thrsh*tf.cast(self.gradfLayers[ll].mu,self.gradfLayers[ll].mu.dtype.real_dtype)/self.stepSz,z_coef[ll])
+            #tf.print('lambda[' + str(ll) + ']: ',self.shrinkLayer[ll].thrsh*tf.cast(self.gradfLayers[ll].mu,self.gradfLayers[ll].mu.dtype.real_dtype)/self.stepSz)
+            l1_sum += self.l1_penalty_layer(self.shrinkLayer[ll].thrsh*self.gradfLayers[ll].mu/self.stepSz,z_coef[ll])
         l1_sum += self.l1_penalty_nonneglayer(self.shrinkLayer[self.noL - 1].thrsh*tf.cast(self.gradfLastLayer.mu,self.gradfLastLayer.mu.dtype.real_dtype)/self.stepSz,z_coef[self.noL - 1])
-        tf.print('lambda[' + str(self.noL - 1) + ']: ',self.shrinkLayer[self.noL - 1].thrsh*tf.cast(self.gradfLastLayer.mu,self.gradfLastLayer.mu.dtype.real_dtype)/self.stepSz)
+        #tf.print('lambda[' + str(self.noL - 1) + ']: ',self.shrinkLayer[self.noL - 1].thrsh*tf.cast(self.gradfLastLayer.mu,self.gradfLastLayer.mu.dtype.real_dtype)/self.stepSz)
         return l1_sum       
 
-    def data_fid_layer(self,mu,z_prevlayer,z_currlayer,layer):
-        return mu/2*tf.math.reduce_sum(tf.math.square(z_prevlayer - self.IFFT[layer](self.dmul[layer](self.FFT[layer](z_currlayer)))))
+    def data_fid_layer(self,mu,z_prevlayer_sp,z_currlayer,layer):
+        return mu/2*tf.math.reduce_sum(tf.math.square(z_prevlayer_sp - self.IFFT[layer](self.dmul[layer](z_currlayer))))
 
     def l1_penalty_layer(self,lmbda,z):
         return lmbda*tf.math.reduce_sum(tf.math.abs(z))
@@ -313,6 +319,27 @@ class ML_FISTA(optmz.FISTA):
         sig_prox = self.proxZ_sig(cropped_z_sig + negC[0],negC[1])
         
         return 1/2*(tf.math.reduce_sum(tf.math.square(sig_prox - cropped_z_sig_s),keepdims = True))
+
+    def get_dict(self):
+        D = []
+        for ii in range(self.noL):
+            Dextend = self.IFFT[ii](tf.complex(self.dhmul[ii].Dfreal,self.dhmul[ii].Dfimag)) #fltrSz is actually in dhmul
+            fltrSz = self.dhmul[ii].updtD.fltrSz
+            Dtrunc = Dextend[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
+            D.append(tf.reshape(Dtrunc,Dtrunc.shape[1:]))
+        return D
+    def get_lamda(self):
+        lmbda = []
+        for ii in range(self.noL - 1):
+            lmbda.append(self.shrinkLayer[ii].thrsh*self.gradfLayers[ll].mu/self.stepSz)
+        lmbda.append(self.shrinkLayer[self.noL - 1].thrsh*self.gradfLastLayer.mu/self.stepSz)
+        return lmbda
+    def get_mu(self):
+        mu = []
+        for ii in range(self.noL - 1):
+            mu.append(self.gradfLayers[ll].mu)
+        mu.append(self.gradfLastLayer.mu)
+        return mu
 
 class Wrap_ML_FISTA(tf.keras.layers.Layer):
     def __init__(self,lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
@@ -335,12 +362,12 @@ class Gradf_y(tf.keras.layers.Layer):
         super().__init__(*args,**kwargs)
     def call(self,x):
         y,x0 = x
-        return self.mu*(y - x0)
+        return tf.cast(self.mu,self.dtype)*(y - x0)
 
 class Gradf(tf.keras.layers.Layer):
     def __init__(self,mucurr,munext,dmul,dhmul,dnextmul,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.mu = tf.Variable(initial_value=mucurr,trainable=True,dtype=tf.as_dtype(self.dtype))
+        self.mu = tf.Variable(initial_value=mucurr,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
         self.munext =  munext
         self.dmul = dmul
         self.dhmul = dhmul
@@ -349,26 +376,26 @@ class Gradf(tf.keras.layers.Layer):
         
     def call(self,x):
         xprev,xcurr,xnext = x
-        return -self.mu*self.dhmul.freezeD(xprev) + self.mu*self.dhmul.freezeD(self.dmul.freezeD(xcurr)) + self.munext*xcurr - self.munext*self.dnextmul(xnext)
+        return -tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(xprev) + tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(self.dmul.freezeD(xcurr)) + tf.cast(self.munext,self.dtype)*xcurr - tf.cast(self.munext,self.dtype)*self.dnextmul(xnext)
 
     def freezeD(self,x):
         xprev,xcurr,xnext = x
-        return -self.mu*self.dhmul.freezeD(xprev) + self.mu*self.dhmul.freezeD(self.dmul.freezeD(xcurr)) + self.munext*xcurr - self.munext*self.dnextmul.freezeD(xnext)
+        return -tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(xprev) + tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(self.dmul.freezeD(xcurr)) + tf.cast(self.munext,self.dtype)*xcurr - tf.cast(self.munext,self.dtype)*self.dnextmul.freezeD(xnext)
 
 
 class Gradf_Last(tf.keras.layers.Layer):
     def __init__(self,mu_init,dmul,dhmul,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.mu = tf.Variable(initial_value=mu_init,trainable=True,dtype=tf.as_dtype(self.dtype))
+        self.mu = tf.Variable(initial_value=mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
         self.dhmul = dhmul
         self.dmul = dmul
         
     def call(self,x):
         xprev,xcurr = x
-        return -self.mu*self.dhmul(xprev) + self.mu*self.dhmul(self.dmul(xcurr))
+        return -tf.cast(self.mu,self.dtype)*self.dhmul(xprev) + tf.cast(self.mu,self.dtype)*self.dhmul(self.dmul(xcurr))
     def freezeD(self,x):
         xprev,xcurr = x
-        return -self.mu*self.dhmul.freezeD(xprev) + self.mu*self.dhmul.freezeD(self.dmul.freezeD(xcurr))
+        return -tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(xprev) + tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(self.dmul.freezeD(xcurr))
 
 
 class Shrink(tf.keras.layers.Layer):

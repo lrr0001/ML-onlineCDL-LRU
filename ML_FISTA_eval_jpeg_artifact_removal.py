@@ -41,7 +41,7 @@ def test_FISTA_CSC(lpstz,noi,databasename,steps_per_epoch,num_of_epochs):
     #   ******** DEPENDENT NAMES AND DIRECTORIES
     experimentpath = 'data/experiment/' + databasename + experimentname
     checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
-    timesname = modelname + 'iter' + str(noi) + '_times.pkl'
+    timesname = 'times/' + modelname + 'lpstz' + str(lpstz) + '_iter' + str(noi) + '_times.pkl'
     modelfilename = modelname + 'initial_model.ckpt'
 
     #   ******** DATA AND EXPERIMENT PARAMETERS ********

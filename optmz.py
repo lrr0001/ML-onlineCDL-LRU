@@ -67,7 +67,7 @@ class ADMM(tf.keras.layers.Layer):
 
     def solve_coef(self,s):
         s,y,u,By,negC,itstats = self.solve(s)
-        return y
+        return y,negC
 
 class ADMM_Relaxed(tf.keras.layers.Layer):
     def __init__(self,rho,alpha,noi,*args,**kwargs):

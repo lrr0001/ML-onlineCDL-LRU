@@ -42,7 +42,7 @@ def test_ADMM_CSC(rho,alpha_init,noi,databasename,steps_per_epoch,num_of_epochs)
     #   ******** DEPENDENT NAMES AND DIRECTORIES
     experimentpath = 'data/experiment/' + databasename + experimentname
     checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
-    timesname = modelname + 'iter' + str(noi) + '_times.pkl'
+    timesname = 'times/' + modelname + 'rho' + str(rho) + '_iter' + str(noi) + '_times.pkl'
     modelfilename = modelname + 'initial_model.ckpt'
 
     #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -108,8 +108,8 @@ def test_ADMM_CSC(rho,alpha_init,noi,databasename,steps_per_epoch,num_of_epochs)
     compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
     inputs = (highpass,lowpass,compressed)
 
-    y = CSC(inputs)
-    output = Get_Obj(y)
+    y,negC = CSC(inputs)
+    output = Get_Obj((y,negC))
     model = tf.keras.Model(inputs,output)
     model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
     for tv in model.trainable_variables:
