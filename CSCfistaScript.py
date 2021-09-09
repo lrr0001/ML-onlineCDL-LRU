@@ -3,7 +3,7 @@ import sys
 
 if __name__ == '__main__':
     databasename = sys.argv[1]
-    lpstz = 2**int(sys.argv[2])
+    lpstz = 2**(int(sys.argv[2])/2)
     noi = int(sys.argv[3])
     #lpstz = 100
     spe = 5
