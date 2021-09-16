@@ -41,6 +41,13 @@ def alternate_concat(values,axis):
     concat_tensor = tf.concat(list(map(alternate_reshape,zip(values,len(values)*(axis,)))),axis)
     return tf.reshape(concat_tensor,concat_tensor.shape[:axis] + (concat_tensor.shape[axis]*concat_tensor.shape[axis + 1],) + concat_tensor.shape[axis + 2:])
 
+def makelist(inputs,num_of_elem):
+    if isinstance(inputs,list):
+        assert(len(inputs) == num_of_elem)
+        return inputs
+    else:
+        return [inputs,]*num_of_elem
+
 class AlternateConcat(tf.keras.layers.Layer):
     def __init__(self,shape,num_of_items,axis,*args,**kwargs):
         super().__init__(*args,**kwargs)
@@ -156,3 +163,4 @@ class Shrinkage(tf.keras.layers.Layer):
     def call(self,inputs):
         x,bias = inputs
         return self.relu((x,bias)) - self.relu((-x,bias))
+

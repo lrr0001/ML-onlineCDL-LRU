@@ -1,12 +1,12 @@
 #!/bin/bash
-databasename='BSDS500/'
+databasename='simpleTest/'
 for ii in {0..48..4}
   do
-#    for logrho in {-6..9..3}
-#      do
-#        python CSCadmmScript.py $databasename $logrho $ii
-#      done
-    for loglpstz in {7..17..1}
+    for logrho in {-6..3..3}
+      do
+        python CSCadmmScript.py $databasename $logrho $ii
+      done
+    for loglpstz in {7..10..1}
       do
         python CSCfistaScript.py $databasename $loglpstz $ii
       done

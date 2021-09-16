@@ -37,14 +37,14 @@ class MultiLayerCSC(optmz.ADMM):
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
         rho = tf.cast(rho,dtype = cmplxdtype.real_dtype)
-        mu_init = tf.cast(mu_init,dtype=cmplxdtype.real_dtype)
+        mu_init = util.makelist(mu_init,noL)
         self.noL = noL
         optmz.ADMM.__init__(self=self,rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
         #self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,name = 'alpha',dtype=dtype)
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
-        self.initializeLayers(rho,mu_init,alpha_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype)
+        self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype)
     def get_config(self):
         config_dict = {'complex_dtype': self.cmplxdtype,
                        'num_of_Layers': self.noL,
@@ -73,11 +73,11 @@ class MultiLayerCSC(optmz.ADMM):
         #self.updateZ_layer = [[],]*(noL - 1)
         self.updateGamma_layer = GetNextIterGamma(dtype=cmplxdtype)
 
-        self.updateZ_lastlayer,mu = self.build_updateZ_lastlayer(fftSz[noL - 1],D[noL - 1].shape[-1],rho,mu_init,self.dictObj[noL - 1],b_init,cmplxdtype)
+        self.updateZ_lastlayer,mu = self.build_updateZ_lastlayer(fftSz[noL - 1],D[noL - 1].shape[-1],rho,mu_init[noL - 1],self.dictObj[noL - 1],b_init[noL - 1],cmplxdtype)
         if noL == 1:
             pass
         for ii in range(noL - 2,-1,-1): # appending backwards because need the mu value, and tensorflow doesn't like when I initialize the entire list.  I'll flip it later so the indices make sense.
-            zupdate,mu = self.build_updateZ_layer(fftSz[ii],D[ii].shape[-1],rho,mu_init,mu,self.dictObj[ii],self.dictObj[ii + 1],b_init,cmplxdtype,strides[ii],ii)
+            zupdate,mu = self.build_updateZ_layer(fftSz[ii],D[ii].shape[-1],rho,mu_init[ii],mu,self.dictObj[ii],self.dictObj[ii + 1],b_init[ii],cmplxdtype,strides[ii],ii)
             #self.updateZ_layer[ii] = zupdate
             reversed_updateZ_layer.append(zupdate)
         
@@ -114,9 +114,10 @@ class MultiLayerCSC(optmz.ADMM):
 
     def build_updateZ_layer(self,fftSz,nof,rho,mu_init,munext,dictObj,nextdictObj,b_init,cmplxdtype,strides,layer):
         if strides == 2:
+            raise NotImplementedError
             zshapes = self.get_b_shape(fftSz,nof)
             #Zupdate = GetNextIterZ(rho,mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
-            Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],mu_init,munext,dictObj,nextdictObj,tf.fill(zshapes,value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
+            Zupdate = GetNextIterZFreq(rho,self.IFFT[layer + 1],tf.cast(mu_init,self.cmplxdtype.real_dtype),munext,dictObj,nextdictObj,tf.fill(zshapes,value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype)
             mu = Zupdate.mu
             #Z_update_shift = GetNextIterZ_downsampleTossed(rho,mu,dictObj,tf.fill(zshapes[0],value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype.real_dtype)
             Z_update_shift = GetNextIterZFreq_downsampleTossed(rho,self.IFFT[layer + 1],mu,dictObj,Zupdate.b,dtype=cmplxdtype)
@@ -127,11 +128,13 @@ class MultiLayerCSC(optmz.ADMM):
             #return {'downsampled': Zupdate, 'shifted': Z_update_shift, 'missed_cols': Z_update_missed_cols,'shift_concat': shift_concat,'cols_concat': cols_concat},mu 
             return (Zupdate,Z_update_shift,Z_update_missed_cols,shift_concat,cols_concat),mu
         else:
-            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],mu_init,munext,dictObj,nextdictObj,tf.fill(self.get_b_shape(fftSz,nof),value=tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype,name='Z_layer' + str(layer))
+            b = tf.zeros(self.get_b_shape(fftSz,nof),dtype=cmplxdtype.real_dtype) + b_init
+            zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],tf.cast(mu_init,cmplxdtype.real_dtype),munext,dictObj,nextdictObj,b,dtype=cmplxdtype,name='Z_layer' + str(layer))
             return zUpdate,zUpdate.mu
 
     def build_updateZ_lastlayer(self,fftSz,nof,rho,mu_init,dictObj,b_init, cmplxdtype):
-        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],mu_init,dictObj,tf.fill(dims = self.get_b_shape(fftSz,nof),value = tf.cast(b_init,dtype=cmplxdtype.real_dtype)),dtype=cmplxdtype,name='Z_layer' + str(self.noL - 1))
+        b = tf.zeros(self.get_b_shape(fftSz,nof),dtype=cmplxdtype.real_dtype) + b_init
+        lastlayer = GetNextIterZFreq_lastlayer(rho,self.IFFT[self.noL - 1],tf.cast(mu_init,self.cmplxdtype.real_dtype),dictObj,b,dtype=cmplxdtype,name='Z_layer' + str(self.noL - 1))
         return lastlayer,lastlayer.mu
 
     def init_itstats(self,s):
@@ -864,7 +867,7 @@ class GetRelaxedAx(tf.keras.layers.Layer):
     '''
     def __init__(self,alpha,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.alpha = tf.Variable(initial_value=alpha,trainable=True,name = 'alpha',dtype=tf.as_dtype(self.dtype).real_dtype)#alpha #tf.Variable(alpha_init,trainable=True)
+        self.alpha = tf.Variable(initial_value=alpha,trainable=False,name = 'alpha',dtype=tf.as_dtype(self.dtype).real_dtype)#alpha #tf.Variable(alpha_init,trainable=True)
     def call(self,inputs):
         x_over_R,z_over_R = inputs
         return  -(1 - tf.cast(self.alpha,self.dtype))*z_over_R - tf.cast(self.alpha,self.dtype)*x_over_R
@@ -926,9 +929,12 @@ class GetNextIterZFreq(tf.keras.layers.Layer,ppg.PostProcess):
         self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
+        ppg.PostProcess.add_update(self.mu.name,self._update_mu)
 
     def _update_b(self):
         return [self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b)),]
+    def _update_mu(self):
+        return [self.mu.assign(tf.where(self.mu < 1e-3,tf.cast(1e-3,dtype=tf.as_dtype(self.dtype).real_dtype),self.mu))]
 
     def call(self,inputs):
         # Inputs are in frequency domain, but output is in spatial domain.
@@ -1004,8 +1010,8 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         return self.relu((-self.ifft(Ax_relaxed + gamma_scaled),R*self.b))
 
     def get_lambda(self,rho):
-        #tf.print('last lambda: ',self.b/(rho*self.mu))
-        return self.b/(rho*self.mu)
+        #tf.print('last lambda: ',self.b*(rho*self.mu))
+        return self.b*(rho*self.mu)
 
 class GetNextIterZ_downsampleTossed(tf.keras.layers.Layer):
     def __init__(self,rho,mu,dictObj,b,*args,**kwargs):

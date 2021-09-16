@@ -8,7 +8,7 @@ import util
 
 class ML_FISTA(optmz.FISTA):
     def __init__(self,lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
-        lmbd = b_init*mu_init
+
         self.noL = noL
         self.lpstz = lpstz
         self.strides = strides
@@ -23,6 +23,11 @@ class ML_FISTA(optmz.FISTA):
         self.qUV = qUV
         self.cropAndMerge = cropAndMerge
         self.FFT,self.IFFT,self.FFT_factor = self.build_fft_layers(fftSz,noL)
+        mu_init = util.makelist(mu_init,noL)
+        b_init = util.makelist(b_init,noL)
+        lmbd = []
+        for ii in range(noL):
+            lmbd.append(mu_init[ii]*(b_init[ii] + tf.zeros(self.get_b_shape(fftSz[ii],D[ii].shape[-1]),dtype= cmplxdtype.real_dtype)))
         self.dmul = []
         self.dhmul = []
         for ll in range(noL):
@@ -31,10 +36,10 @@ class ML_FISTA(optmz.FISTA):
             noc = D[ll].shape[-2]
             self.dhmul.append(DhMul(Df,fltrSz,self.IFFT[ll],self.FFT[ll],noc,dtype=self.cmplxdtype,name='Dh_mul_' + str(ll)))
             self.dmul.append(DMul(self.dhmul[ll],dtype=self.cmplxdtype,name='D_mul_' + str(ll))) 
-        self.gradfLastLayer,mu = self.build_grad_last_layer(mu_init,self.dmul[noL - 1],self.dhmul[noL - 1])
+        self.gradfLastLayer,mu = self.build_grad_last_layer(mu_init[noL - 1],self.dmul[noL - 1],self.dhmul[noL - 1])
         reversedGradLayers = []
         for ll in range(noL - 2,-1,-1):
-            grad_layer,mu = self.build_grad_layer(mu_init,mu,self.dmul,self.dhmul,ll)
+            grad_layer,mu = self.build_grad_layer(mu_init[ll],mu,self.dmul,self.dhmul,ll)
             reversedGradLayers.append(grad_layer)
         self.gradfY = Gradf_y(mu,dtype=self.cmplxdtype)
         self.gradfLayers = []
@@ -44,8 +49,8 @@ class ML_FISTA(optmz.FISTA):
 
         self.shrinkLayer = []
         for ll in range(noL - 1):
-            self.shrinkLayer.append(Shrink(tf.cast(lmbd/self.gradfLayers[ll].mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[ll],self.FFT[ll],dtype = self.cmplxdtype,name = 'shrink_' + str(ll))) # If mu was properly typed, casting my not be necessary
-        self.shrinkLayer.append(BiasedReLU(tf.cast(lmbd/self.gradfLastLayer.mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[noL - 1],self.FFT[noL - 1],dtype = self.cmplxdtype,name = 'shrink_' + str(noL - 1)))  # if mu was properly typed, casting my not be necessary
+            self.shrinkLayer.append(Shrink(tf.cast(lmbd[ll]/self.gradfLayers[ll].mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[ll],self.FFT[ll],dtype = self.cmplxdtype,name = 'shrink_' + str(ll)))
+        self.shrinkLayer.append(BiasedReLU(tf.cast(lmbd[noL - 1]/self.gradfLastLayer.mu*self.stepSz,cmplxdtype.real_dtype),self.IFFT[noL - 1],self.FFT[noL - 1],dtype = self.cmplxdtype,name = 'shrink_' + str(noL - 1)))
         self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         self.Wt = jrf.JPEG_Coef2RGB(dtype=cmplxdtype.real_dtype)
         self.proxy = jrf.ZUpdate_JPEG_Implicit(qY,qUV,self.W,self.Wt,dtype = self.cmplxdtype.real_dtype)
@@ -60,6 +65,11 @@ class ML_FISTA(optmz.FISTA):
                        'noi': self.noi,
                        'record_iteration_stats': self.longitstat}
         return config_dict
+
+    def get_b_shape(self,fftSz,M):
+        #return [1,fftSz[0],fftSz[1],M,1,]
+        #return [1,1,1,M,1]
+        return (1,)
 
     def build_fft_layers(self,fftSz,noL):
         FFT = []
@@ -304,10 +314,10 @@ class ML_FISTA(optmz.FISTA):
         return mu/2*tf.math.reduce_sum(tf.math.square(z_prevlayer_sp - self.IFFT[layer](self.dmul[layer](z_currlayer))))
 
     def l1_penalty_layer(self,lmbda,z):
-        return lmbda*tf.math.reduce_sum(tf.math.abs(z))
+        return tf.math.reduce_sum(tf.math.abs(lmbda*z))
 
     def l1_penalty_nonneglayer(self,lmbda,z):
-        return lmbda*tf.math.reduce_sum(self.relu(z))
+        return tf.math.reduce_sum(self.relu(lmbda*z))
 
 
     def nonnegativity_constraint_layer(self,z):
@@ -367,12 +377,13 @@ class Gradf_y(tf.keras.layers.Layer):
 class Gradf(tf.keras.layers.Layer):
     def __init__(self,mucurr,munext,dmul,dhmul,dnextmul,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.mu = tf.Variable(initial_value=mucurr,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        with tf.name_scope(self.name):
+            self.mu = tf.Variable(initial_value=mucurr,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
         self.munext =  munext
         self.dmul = dmul
         self.dhmul = dhmul
         self.dnextmul = dnextmul
-        
+        ppg.PostProcess.add_update(self.mu.name,self._update_mu)
         
     def call(self,x):
         xprev,xcurr,xnext = x
@@ -381,48 +392,55 @@ class Gradf(tf.keras.layers.Layer):
     def freezeD(self,x):
         xprev,xcurr,xnext = x
         return -tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(xprev) + tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(self.dmul.freezeD(xcurr)) + tf.cast(self.munext,self.dtype)*xcurr - tf.cast(self.munext,self.dtype)*self.dnextmul.freezeD(xnext)
-
+    def _update_mu(self):
+        return [self.mu.assign(tf.where(self.mu < 1e-3,tf.cast(1e-3,dtype=tf.as_dtype(self.dtype).real_dtype),self.mu))]
 
 class Gradf_Last(tf.keras.layers.Layer):
     def __init__(self,mu_init,dmul,dhmul,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.mu = tf.Variable(initial_value=mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype)
+        with tf.name_scope(self.name):
+            self.mu = tf.Variable(initial_value=mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name = 'mu')
         self.dhmul = dhmul
         self.dmul = dmul
-        
+        ppg.PostProcess.add_update(self.mu.name,self._update_mu)
+
     def call(self,x):
         xprev,xcurr = x
         return -tf.cast(self.mu,self.dtype)*self.dhmul(xprev) + tf.cast(self.mu,self.dtype)*self.dhmul(self.dmul(xcurr))
     def freezeD(self,x):
         xprev,xcurr = x
         return -tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(xprev) + tf.cast(self.mu,self.dtype)*self.dhmul.freezeD(self.dmul.freezeD(xcurr))
-
+    def _update_mu(self):
+        return [self.mu.assign(tf.where(self.mu < 1e-3,tf.cast(1e-3,dtype=tf.as_dtype(self.dtype).real_dtype),self.mu))]
 
 class Shrink(tf.keras.layers.Layer):
     def __init__(self,thrsh,IFFT,FFT,*args,**kwargs):
-        self.thrsh=thrsh
+        super().__init__(*args,**kwargs)
+        with tf.name_scope(self.name):
+            self.thrsh = tf.Variable(thrsh,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
+        ppg.PostProcess.add_update(self.thrsh.name,self._update_b)
         self.IFFT = IFFT
         self.FFT = FFT
-        super().__init__(*args,**kwargs)
         self.RELU = util.Shrinkage(dtype = tf.as_dtype(self.dtype).real_dtype)
     def call(self,x):
         return self.FFT(self.RELU((self.IFFT(x),self.thrsh)))
-    def get_config(self):
-        config_dict = {'threshold': self.thrsh}
-        return config_dict
+    def _update_b(self):
+        return [self.thrsh.assign(tf.where(self.thrsh < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.thrsh)),]
 
 class BiasedReLU(tf.keras.layers.Layer):
     def __init__(self,thrsh,IFFT,FFT,*args,**kwargs):
-        self.thrsh=thrsh
+        super().__init__(*args,**kwargs)
+        with tf.name_scope(self.name):
+            self.thrsh = tf.Variable(thrsh,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
+        ppg.PostProcess.add_update(self.thrsh.name,self._update_b)
         self.IFFT = IFFT
         self.FFT = FFT
-        super().__init__(*args,**kwargs)
+
         self.RELU = util.BiasedReLU(dtype = tf.as_dtype(self.dtype).real_dtype)
     def call(self,x):
         return self.FFT(self.RELU((self.IFFT(x),self.thrsh)))
-    def get_config(self):
-        config_dict = {'threshold': self.thrsh}
-        return config_dict
+    def _update_b(self):
+        return [self.thrsh.assign(tf.where(self.thrsh < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.thrsh)),]
 
 class DhMul(tf.keras.layers.Layer,ppg.PostProcess):
     def __init__(self,Df,fltrSz,IFFT,FFT,noc,*args,**kwargs):

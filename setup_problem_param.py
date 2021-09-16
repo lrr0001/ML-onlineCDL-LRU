@@ -7,7 +7,7 @@ noc = 3
 stride = [1]
 fltrSz = ((5,5),(7,7),)
 noL = len(fltrSz)
-noi =  50
+noi =  16
 dtype = 'float64'
 
 D = []

@@ -9,22 +9,22 @@ import util
 
 #   ******** ALGORITHM-SPECIFIC HYPERPARAMETERS ********
 #rho = 1.
-lpstz = 100.
+lpstz = 64.
 #0alpha_init = 1.5
 mu_init = 1.
 b_init = 0.
 #n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
-steps_per_epoch = 4
+steps_per_epoch = 32
 step_size = 0.01
-num_of_epochs = 2
+num_of_epochs = 192
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
 modelname = 'ML_FISTA_'
-#databasename = 'BSDS500/'
-databasename = 'simpleTest/'
+databasename = 'BSDS500/'
+#databasename = 'simpleTest/'
 experimentname = 'experiment1/'
 experimentpath = 'data/experiment/' + databasename + experimentname
 checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
