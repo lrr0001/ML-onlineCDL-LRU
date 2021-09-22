@@ -341,13 +341,13 @@ class ML_FISTA(optmz.FISTA):
     def get_lamda(self):
         lmbda = []
         for ii in range(self.noL - 1):
-            lmbda.append(self.shrinkLayer[ii].thrsh*self.gradfLayers[ll].mu/self.stepSz)
+            lmbda.append(self.shrinkLayer[ii].thrsh*self.gradfLayers[ii].mu/self.stepSz)
         lmbda.append(self.shrinkLayer[self.noL - 1].thrsh*self.gradfLastLayer.mu/self.stepSz)
         return lmbda
     def get_mu(self):
         mu = []
         for ii in range(self.noL - 1):
-            mu.append(self.gradfLayers[ll].mu)
+            mu.append(self.gradfLayers[ii].mu)
         mu.append(self.gradfLastLayer.mu)
         return mu
 
