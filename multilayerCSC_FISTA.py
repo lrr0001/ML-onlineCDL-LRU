@@ -335,7 +335,7 @@ class ML_FISTA(optmz.FISTA):
         for ii in range(self.noL):
             Dextend = self.IFFT[ii](tf.complex(self.dhmul[ii].Dfreal,self.dhmul[ii].Dfimag)) #fltrSz is actually in dhmul
             fltrSz = self.dhmul[ii].updtD.fltrSz
-            Dtrunc = Dextend[slice(None),slice(0,self.fltrSz[0],1),slice(0,self.fltrSz[1],1),slice(None),slice(None)]
+            Dtrunc = Dextend[slice(None),slice(0,fltrSz[0],1),slice(0,fltrSz[1],1),slice(None),slice(None)]
             D.append(tf.reshape(Dtrunc,Dtrunc.shape[1:]))
         return D
     def get_lamda(self):
