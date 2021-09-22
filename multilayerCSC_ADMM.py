@@ -800,7 +800,7 @@ class MultiLayerCSC(optmz.ADMM):
     def get_lambda(self):
         lmbda = []
         for ii in range(self.noL - 1):
-             lmdba.append(self.updateZ_layer[ii].get_lambda(self.rho))
+             lmbda.append(self.updateZ_layer[ii].get_lambda(self.rho))
         lmbda.append(self.updateZ_lastlayer.get_lambda(self.rho))
         return lmbda
 
