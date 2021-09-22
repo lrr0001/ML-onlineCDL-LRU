@@ -338,7 +338,7 @@ class ML_FISTA(optmz.FISTA):
             Dtrunc = Dextend[slice(None),slice(0,fltrSz[0],1),slice(0,fltrSz[1],1),slice(None),slice(None)]
             D.append(tf.reshape(Dtrunc,Dtrunc.shape[1:]))
         return D
-    def get_lamda(self):
+    def get_lambda(self):
         lmbda = []
         for ii in range(self.noL - 1):
             lmbda.append(self.shrinkLayer[ii].thrsh*self.gradfLayers[ii].mu/self.stepSz)
