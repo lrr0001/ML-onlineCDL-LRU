@@ -148,24 +148,24 @@ for tv in model.trainable_variables:
 #   ******** COMPILE AND TEST MODEL ********
 
 model.load_weights(experimentpath + modelfilename)
-alph = CSC.get_alpha
+#alph = CSC.get_alpha
 mu = CSC.get_mu()
 D = CSC.get_dict()
 lambd = CSC.get_lambda()
 fid = open(experimentpath + modelfilename + '.pkl','wb')
-pkl.dump(alph,fid)
+#pkl.dump(alph,fid)
 pkl.dump(mu,fid)
 pkl.dump(D,fid)
 pkl.dump(lambd,fid)
 fid.close()
 for epoch in range(num_of_epochs):
     model.load_weights(experimentpath + checkpointfilename.format(epoch=epoch + 1))
-    alph = CSC.get_alpha
+#    alph = CSC.get_alpha
     mu = CSC.get_mu()
     D = CSC.get_dict()
     lambd = CSC.get_lambda()
     fid = open(experimentpath + checkpointfilename.format(epoch=epoch + 1) + '.pkl','wb')
-    pkl.dump(alph,fid)
+#    pkl.dump(alph,fid)
     pkl.dump(mu,fid)
     pkl.dump(D,fid)
     pkl.dump(lambd,fid)
