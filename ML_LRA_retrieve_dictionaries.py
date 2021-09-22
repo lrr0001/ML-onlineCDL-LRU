@@ -152,7 +152,7 @@ alph = CSC.get_alpha
 mu = CSC.get_mu()
 D = CSC.get_dict()
 lambd = CSC.get_lambda()
-fid = open(experimentpath + checkpointfilename.format(epoch=ephoch + 1) + '.pkl','wb')
+fid = open(experimentpath + modelfilename + '.pkl','wb')
 pkl.dump(alph,fid)
 pkl.dump(mu,fid)
 pkl.dump(D,fid)
