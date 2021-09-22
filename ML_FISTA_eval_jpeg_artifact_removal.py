@@ -210,7 +210,7 @@ def test_FISTA_CSC_saved_dict(lpstz,noi,databasename,steps_per_epoch,num_of_epoc
     #   ******** BUILD MODEL ********
     #CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
     print(D[0].shape)
-    print(problem_param['D'].shape)
+    print(problem_param['D'][0].shape)
     CSC_Wrap = mlcscf.Wrap_ML_FISTA(lpstz,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,noi,noL,cmplxdtype)
     Get_Obj = mlcscf.Get_Obj(CSC_Wrap)
 
