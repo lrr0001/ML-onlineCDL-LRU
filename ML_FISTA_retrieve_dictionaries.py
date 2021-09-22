@@ -161,7 +161,7 @@ for epoch in range(num_of_epochs):
     mu = CSC.get_mu()
     D = CSC.get_dict()
     lambd = CSC.get_lambda()
-    fid = open(experimentpath + checkpointfilename.format(epoch=ephoch + 1) + '.pkl','wb')
+    fid = open(experimentpath + checkpointfilename.format(epoch=epoch + 1) + '.pkl','wb')
     pkl.dump(mu)
     pkl.dump(D)
     pkl.dump(lambd)
