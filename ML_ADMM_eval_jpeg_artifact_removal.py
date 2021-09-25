@@ -133,7 +133,7 @@ def test_ADMM_CSC_saved_dict(rho,alpha_init,noi,databasename,steps_per_epoch,num
     #alpha_init = 1.5
     #mu_init = 1.
     #b_init = 0.1
-    #n_components = 4
+    n_components = 4
     cmplxdtype = tf.complex128 # This should really be elsewhere.
     batch_size = steps_per_epoch
     #steps_per_epoch = 4
