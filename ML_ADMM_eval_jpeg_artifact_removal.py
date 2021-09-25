@@ -61,6 +61,7 @@ def test_ADMM_CSC(rho,alpha_init,noi,databasename,steps_per_epoch,num_of_epochs)
     noc = problem_param['noc']
     datapath = problem_param['datapath']
     trainfile = problem_param['trainfile']
+    valfile = problem_param['valfile']
     padding = data_param['padding']
 
 
@@ -90,7 +91,7 @@ def test_ADMM_CSC(rho,alpha_init,noi,databasename,steps_per_epoch,num_of_epochs)
         lowpass = restore_double(x['lowpass'])
         return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
 
-    raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
+    raw_dataset = tf.data.TFRecordDataset([datapath + valfile])
     dataset = raw_dataset.map(_parse_image_function)
     dataset_batch = dataset.batch(batch_size)
 
