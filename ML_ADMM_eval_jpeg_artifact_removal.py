@@ -220,8 +220,8 @@ def test_ADMM_CSC_saved_dict(rho,alpha_init,noi,databasename,steps_per_epoch,num
     compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
     inputs = (highpass,lowpass,compressed)
 
-    z,x,negC = CSC_Wrap(inputs)
-    output = Get_Obj((x,negC))
+    z,negC = CSC_Wrap(inputs)
+    output = Get_Obj((z,negC))
     reconstruction1,reconstruction2,itstats = CSC_Wrap.admm(inputs)
     clipped_reconstruction2 = util.clip(a=0.,b = 1.,dtype=real_dtype)(reconstruction2)
     model = tf.keras.Model(inputs,output)
