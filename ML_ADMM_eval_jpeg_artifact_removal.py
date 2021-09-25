@@ -210,7 +210,7 @@ def test_ADMM_CSC_saved_dict(rho,alpha_init,noi,databasename,steps_per_epoch,num
 
     #   ******** BUILD MODEL ********
     #CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
-    CSC = mlcsc.Wrap_ML_ADMM(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,[tf.reshape(D[ii],(1,) + D[ii].shape) for ii in range(len(D))],n_components,noi,noL,cmplxdtype)
+    CSC_Wrap = mlcsc.Wrap_ML_ADMM(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,[tf.reshape(D[ii],(1,) + D[ii].shape) for ii in range(len(D))],n_components,noi,noL,cmplxdtype)
     Get_Obj = mlcsc.Get_Obj(CSC_Wrap)
 
     # Build Input Layers
