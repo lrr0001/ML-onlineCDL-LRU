@@ -135,6 +135,7 @@ import time
 class TimeHistoryAndCheckpoint(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
         self.train_times = []
+        self.epoch = 0
 
     def on_test_begin(self, logs={}):
         self.test_times = []
@@ -146,11 +147,12 @@ class TimeHistoryAndCheckpoint(tf.keras.callbacks.Callback):
         self.test_times.append(time.time() - self.test_batch_start_time)
 
     def on_epoch_begin(self, batch, logs={}):
+        self.epoch = self.epoch + 1
         self.epoch_time_start = time.time()
 
     def on_epoch_end(self, batch, logs={}):
         self.train_times.append(time.time() - self.epoch_time_start)
-        fid = open(experimentpath + checkpointfilename.format(epoch=epoch + 1) + '.pkl','wb')
+        fid = open(experimentpath + checkpointfilename.format(epoch=self.epoch) + '.pkl','wb')
         pkl.dump(CSC.get_mu(),fid)
         pkl.dump(CSC.get_dict(),fid)
         pkl.dump(CSC.get_lambda(),fid)
