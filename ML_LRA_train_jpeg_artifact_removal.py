@@ -129,8 +129,8 @@ import os
 os.system(log_sha_command + experimentpath + modelname + sha_name)
 
 #checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=experimentpath + checkpointfilename, monitor='loss',
-    verbose=0, save_best_only=False, save_weights_only=True, save_freq='epoch', options=None
-)
+#    verbose=0, save_best_only=False, save_weights_only=True, save_freq='epoch', options=None
+#)
 import time
 class TimeHistoryAndCheckpoint(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
