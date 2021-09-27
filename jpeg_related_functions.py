@@ -62,7 +62,7 @@ class Smooth_JPEG_Constant(optmz.ADMM):
                Raw image (YUV)'''
         #x,Ax = self.xstep(y,u,By,negC)
         compressedImg = self.Wt(negC)
-        x = tf.fill(0.5,compressedImg.shape,dtype=self.dtype)
+        x = tf.fill(tf.cast(0.5,self.dtype),compressedImg.shape)
         return (x,self.Wt(negC))
 
 class Smooth_JPEG(Smooth_JPEG_Constant):
