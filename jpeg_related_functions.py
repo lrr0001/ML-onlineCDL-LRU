@@ -4,7 +4,71 @@ import numpy as np
 import transforms as transf
 import optmz
 
-class Smooth_JPEG(optmz.ADMM):
+class Smooth_JPEG_Constant(optmz.ADMM):
+    ''' This layer computes a smoothed version of a JPEG-compressed image. Input is an uncompressed RGB image.
+        Output is a constant image of 0.5, and the compressed JPEG image.''' 
+    def __init__(self,rho,alpha,noi,qY,qUV,lmbda,fftSz,*args,**kwargs):
+        self.qY = tf.reshape(qY,(1,1,1,64))
+        self.qUV = tf.reshape(qUV,(1,1,1,64))
+        self.lmbda = lmbda
+        self.fftSz = fftSz
+        self.fltr = np.asarray([-1.,1.])
+        super().__init__(rho,alpha,noi,*args,**kwargs)
+        self.init_fun()
+    def init_fun(self):
+        self.W = RGB2JPEG_Coef(dtype=self.dtype)
+        self.Wt = JPEG_Coef2RGB(dtype=self.dtype)
+
+    # These initializations happen once per input (negC,y,By,u):
+    def init_x(self,s,negC):
+        return (None,None)
+    def init_y(self,s,x,Ax,negC):
+        #return (self.Wt(negC),negC)
+        #return (self.Wt(negC),None)
+        return (None,None)
+    def init_u(self,s,Ax,By,negC):
+        #return [0.,0.,0.]
+        return (None,)
+    def get_negative_C(self,s):
+        Ws = self.W(s)
+        Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
+        return threeChannelQuantize(Ws,self.qY,self.qUV,Yoffset)
+    def init_itstats(self,s):
+        return []
+
+
+    # iterative steps:
+    def xstep(self,y,u,By,negC):
+        #return (self.xupdate(y),None)
+        return (None,None)
+    def relax(self,Ax,By,negC):
+        #return self.relaxlayer((negC,By))
+        return (None,)
+    def ystep(self,x,u,Ax_relaxed,negC):
+        #return (self.yupdate((x,negC)),None)
+        return (None,None)
+    def ustep(self,u,Ax_relaxed,By,negC):
+        return (None,)
+
+    # Before and After:
+    def preprocess(self,s):
+        #rgb2yuv = RGB2YUV(dtype=self.dtype)
+        #return rgb2yuv(s)
+        return s
+    def get_output(self,s,y,u,By,negC,itstats):
+        ''' Outputs:
+               Smoothed image (YUV)
+               Compressed image (YUV)
+               Raw image (YUV)'''
+        #x,Ax = self.xstep(y,u,By,negC)
+        compressedImg = self.Wt(negC)
+        x = tf.fill(0.5,compressedImg.shape,dtype=self.dtype)
+        return (x,self.Wt(negC))
+
+class Smooth_JPEG(Smooth_JPEG_Constant):
+    pass
+
+class Smooth_JPEG_ACTUAL(optmz.ADMM):
     ''' This layer computes a smoothed version of a JPEG-compressed image. Input is an uncompressed RGB image.
         Output is a smoothed version of the image in YUV domain, a JPEG-compressed YUV image, and an uncompressed YUV image.''' 
     def __init__(self,rho,alpha,noi,qY,qUV,lmbda,fftSz,*args,**kwargs):
@@ -66,7 +130,6 @@ class Smooth_JPEG(optmz.ADMM):
                Raw image (YUV)'''
         x,Ax = self.xstep(y,u,By,negC)
         return (x,self.Wt(negC))
-
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
     y = tf.reshape(2*tf.range(8.) + 1,(1,8,1,1))

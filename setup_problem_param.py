@@ -12,7 +12,7 @@ dtype = 'float64'
 
 D = []
 D_first = np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype(dtype)
-D.append(D_first - tf.math.reduce_mean(input_tensor=D_first,axis = (1,2),keepdims=True))
+D.append(D_first)# - tf.math.reduce_mean(input_tensor=D_first,axis = (1,2),keepdims=True))
 #D.append(np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64'))
 for layer in range(1,noL):
     D.append(np.random.randn(1,fltrSz[layer][0],fltrSz[layer][1],nof[layer - 1],nof[layer]).astype(dtype))
