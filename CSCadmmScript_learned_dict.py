@@ -8,5 +8,5 @@ if __name__ == '__main__':
     pklfile = sys.argv[4]
     alpha = 1.5
     spe = 16
-    noe = 128
+    noe = 64
     admm.test_ADMM_CSC_saved_dict(rho = rho,alpha_init=alpha,noi = noi,databasename = databasename,steps_per_epoch = spe, num_of_epochs = noe,pklfile = pklfile)
