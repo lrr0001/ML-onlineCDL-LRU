@@ -14,7 +14,7 @@ b_init = 0.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
-steps_per_epoch = 128
+steps_per_epoch = 1024
 step_size = 0.01
 num_of_epochs = 96
 
