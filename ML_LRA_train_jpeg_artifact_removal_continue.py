@@ -17,6 +17,7 @@ batch_size = 1
 steps_per_epoch = 1024
 step_size = 0.01
 num_of_epochs = 96
+prev_end_epoch = 124
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -44,6 +45,8 @@ noc = problem_param['noc']
 datapath = problem_param['datapath']
 trainfile = problem_param['trainfile']
 padding = data_param['padding']
+
+# Load the dictionary and then add repeat() to dataset to allow it to repeat indefinitely.  Finally, change the starting epoch, and get back to learning.
 
 
 #   ******** CROPPING AND PADDING ********
@@ -76,6 +79,7 @@ def _parse_image_function(example_proto):
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
+dataset_batch = dataset_batch.repeat()
 
 
 for (x,y) in dataset_batch:
@@ -95,7 +99,12 @@ for (x,y) in dataset_batch:
     break
 
 #   ******** BUILD MODEL ********
-CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
+fid = open(experimentpath + checkpointfilename.format(epoch=prev_end_epoch) + '.pkl','rb')
+mu_init = pkl.load(fid)
+D = pkl.load(fid)
+b_init = pkl.load(fid)
+fid.close()
+CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,[tf.reshape(D[ii],(1,) + D[ii].shape) for ii in range(len(D))],n_components,noi,noL,cmplxdtype)
 
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
@@ -161,7 +170,7 @@ time_callback = TimeHistoryAndCheckpoint()
 driftTrackerCallback = ppg.DriftTracker(1e-12)
 postprocesscallback = ppg.PostProcessCallback()
 
-model.load_weights(experimentpath + 'archived/' + 'ML_LRA_end_model.ckpt')
+#model.load_weights(experimentpath + 'archived/' + 'ML_LRA_end_model.ckpt')
 
 model.fit(x=dataset_batch,epochs= num_of_epochs,steps_per_epoch=steps_per_epoch,shuffle=False,verbose=2,callbacks = [postprocesscallback,driftTrackerCallback,time_callback])
 
