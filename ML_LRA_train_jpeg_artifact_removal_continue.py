@@ -17,7 +17,7 @@ batch_size = 1
 steps_per_epoch = 1024
 step_size = 0.01
 num_of_epochs = 96
-prev_end_epoch = 124
+prev_end_epoch = 120
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
