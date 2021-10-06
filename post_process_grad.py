@@ -77,8 +77,8 @@ class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
                 #    self.model.save_weights('iter_' + str(self.itrtn) + '_weights.ckpt')
                 #    self.saveCounter = self.saveCounter + 1
                 #self.lastreset = self.itrtn
-            drift = CondPostProcess.cond[tvname]()
-            self.history.setdefault('afterdrift_' + tvname,[]).append(drift)
+            #drift = CondPostProcess.cond[tvname]()
+            #self.history.setdefault('afterdrift_' + tvname,[]).append(drift)
 
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)
@@ -87,7 +87,7 @@ class DriftTracker(tf.keras.callbacks.Callback,CondPostProcess):
         output = {'iterations': self.history['itrtns']}
         for tvname in self.condupdate_keys:
             output['drift_' + tvname] = self.history['drift_' + tvname]
-            output['afterdrift_' + tvname] = self.history['afterdrift_' + tvname]
+            #output['afterdrift_' + tvname] = self.history['afterdrift_' + tvname]
         return output
 
 

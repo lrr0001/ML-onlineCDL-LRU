@@ -14,9 +14,9 @@ b_init = 0.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
-steps_per_epoch = 32
+steps_per_epoch = 1028
 step_size = 0.01
-num_of_epochs = 96
+num_of_epochs = 160
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -76,6 +76,7 @@ def _parse_image_function(example_proto):
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
+dataset_batch = dataset_batch.repeat()
 
 
 for (x,y) in dataset_batch:

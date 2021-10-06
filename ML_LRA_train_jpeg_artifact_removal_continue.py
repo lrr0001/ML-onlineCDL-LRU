@@ -144,7 +144,7 @@ import time
 class TimeHistoryAndCheckpoint(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
         self.train_times = []
-        self.epoch = 96
+        self.epoch = prev_end_epoch
 
     def on_test_begin(self, logs={}):
         self.test_times = []
