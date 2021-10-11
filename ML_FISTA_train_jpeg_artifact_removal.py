@@ -18,7 +18,7 @@ cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 1
 steps_per_epoch = 1028
 step_size = 0.01
-num_of_epochs = 96
+num_of_epochs = 128
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -41,7 +41,7 @@ strides = problem_param['stride']
 fltrSz = problem_param['fltrSz']
 real_dtype = data_param['dtype']
 #noi = problem_param['noi']
-noi = 64
+noi = 48
 noL = problem_param['noL']
 noc = problem_param['noc']
 datapath = problem_param['datapath']
