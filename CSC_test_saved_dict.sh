@@ -13,6 +13,6 @@ modelname='ML_FISTA_'
 extension='.pkl'
 for ii in {10..96..1}
   do
-    python CSCfistaScript_learned_dict.py $databasename 12 16 $modelname$checkpointstr$ii$extension
+    python CSCfistaScript_learned_dict.py $databasename 12 48 $modelname$checkpointstr$ii$extension
   done
 
