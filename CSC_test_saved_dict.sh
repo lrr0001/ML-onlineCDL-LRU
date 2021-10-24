@@ -3,7 +3,7 @@ databasename='BSDS500/'
 
 modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
 modelname='ML_LRA_'
-checkpointstr='checkpoint_epoch_'
+checkpointstr='checkpoint_epoch_0'
 extension='.ckpt.pkl'
 for ii in {1..9..1}
   do
