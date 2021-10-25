@@ -225,9 +225,9 @@ def test_FISTA_CSC_saved_dict(lpstz,noi,databasename,steps_per_epoch,num_of_epoc
     z,x,negC = CSC_Wrap(inputs)
     output = Get_Obj((x,negC))
     reconstruction1,reconstruction2,itstats = CSC_Wrap.fista(inputs)
-    clipped_reconstruction2 = util.clip(a=0.,b = 1.,dtype=real_dtype)(reconstruction2)
+    clipped_reconstruction = util.clip(a=0.,b = 1.,dtype=real_dtype)(reconstruction1)
     model = tf.keras.Model(inputs,output)
-    model2 = tf.keras.Model(inputs,clipped_reconstruction2)
+    model2 = tf.keras.Model(inputs,clipped_reconstruction)
     model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
     model2.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
     for tv in model.trainable_variables:
@@ -235,8 +235,8 @@ def test_FISTA_CSC_saved_dict(lpstz,noi,databasename,steps_per_epoch,num_of_epoc
 
 
     time_callback = TimeHistory()
-
-    outputs = model.predict(x=dataset_batch,steps=num_of_epochs,verbose=0,callbacks = [time_callback])
+    outputs = []
+    #outputs = model.predict(x=dataset_batch,steps=num_of_epochs,verbose=0,callbacks = [time_callback])
     outputs2 = model2.evaluate(x= dataset_batch,steps = num_of_epochs,verbose=0)
 
     fid = open(experimentpath + timesname,'wb')
