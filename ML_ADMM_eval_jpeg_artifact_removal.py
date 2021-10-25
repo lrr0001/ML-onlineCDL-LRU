@@ -270,7 +270,7 @@ def test_ADMM_CSC_init(rho,alpha_init,noi,databasename,steps_per_epoch,num_of_ep
 
     #   ******** DEPENDENT NAMES AND DIRECTORIES
     experimentpath = 'data/experiment/' + databasename + experimentname
-    modelfilename = modelname + 'initial_model.ckpt'
+    modelfilename = 'ML_LRA_' + 'initial_model.ckpt'
 
     #   ******** DATA AND EXPERIMENT PARAMETERS ********
     fid = open(experimentpath + 'problem_param.pckl','rb')
