@@ -242,7 +242,7 @@ def test_FISTA_CSC_saved_dict(lpstz,noi,databasename,steps_per_epoch,num_of_epoc
     fid = open(experimentpath + timesname,'wb')
     pkl.dump(outputs,fid)
     pkl.dump(outputs2,fid)
-    pkl.dump(time_callback.predict_times,fid)
+    #pkl.dump(time_callback.predict_times,fid)
     fid.close()
 
     tf.keras.backend.clear_session()
