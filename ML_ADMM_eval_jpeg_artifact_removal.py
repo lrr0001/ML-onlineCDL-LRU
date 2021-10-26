@@ -349,7 +349,7 @@ def test_ADMM_CSC_init(rho,alpha_init,noi,databasename,steps_per_epoch,num_of_ep
     model = tf.keras.Model(inputs,output)
     model2 = tf.keras.Model(inputs,clipped_reconstruction)
     model2.load_weights(experimentpath + modelfilename)
-#    model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
+    model.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
     model2.compile(optimizer = tf.keras.optimizers.SGD(step_size),loss = tf.keras.losses.MSE,run_eagerly=False)
     for tv in model.trainable_variables:
         print(tv.name)
@@ -357,9 +357,10 @@ def test_ADMM_CSC_init(rho,alpha_init,noi,databasename,steps_per_epoch,num_of_ep
 
     time_callback = TimeHistory()
 
-    outputs = []
-    #outputs = model.predict(x=dataset_batch,steps=num_of_epochs,verbose=0,callbacks = [time_callback])
-    outputs2 = model2.evaluate(x= dataset_batch,steps = num_of_epochs,verbose=0)
+    #outputs = []
+    outputs = model.predict(x=dataset_batch,steps=num_of_epochs,verbose=0,callbacks = [time_callback])
+    #outputs2 = model2.evaluate(x= dataset_batch,steps = num_of_epochs,verbose=0)
+    outputs2 = []
 
     fid = open(experimentpath + timesname,'wb')
     pkl.dump(outputs,fid)

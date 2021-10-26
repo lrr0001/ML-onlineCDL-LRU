@@ -29,14 +29,20 @@ databasename='BSDS500/'
 #    python CSCfistaScript_learned_dict.py $databasename 12 48 $modelname$checkpointstr$ii$extension
 #  done
 
-#modelname='ML_LRA_'
+modelname='ML_LRA_'
 checkpointstr='checkpoint_epoch_0'
-#extension='.ckpt.pkl'
-#ii=0
-#python CSCadmmScript_init.py $databasename 0 16 $modelname$checkpointstr$ii$extension
+extension='.ckpt.pkl'
+ii=0
+for iter in {4..48..4} 
+  do
+    python CSCadmmScript_init.py $databasename 0 $iter $modelname$checkpointstr$ii$extension
+  done
 
 modelname='ML_FISTA_'
 extension='.pkl'
 ii=0
-python CSCfistaScript_init.py $databasename 12 48 $modelname$checkpointstr$ii$extension
+for iter in {4..48..4}
+  do
+    python CSCfistaScript_init.py $databasename 12 $iter $modelname$checkpointstr$ii$extension
+  done
 

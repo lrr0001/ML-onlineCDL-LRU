@@ -357,8 +357,9 @@ def test_FISTA_CSC_init(lpstz,noi,databasename,steps_per_epoch,num_of_epochs,pkl
 
     time_callback = TimeHistory()
     outputs = []
-    #outputs = model.predict(x=dataset_batch,steps=num_of_epochs,verbose=0,callbacks = [time_callback])
-    outputs2 = model2.evaluate(x= dataset_batch,steps = num_of_epochs,verbose=0)
+    outputs = model.predict(x=dataset_batch,steps=num_of_epochs,verbose=0,callbacks = [time_callback])
+    #outputs2 = model2.evaluate(x= dataset_batch,steps = num_of_epochs,verbose=0)
+    outputs2 = []
 
     fid = open(experimentpath + timesname,'wb')
     pkl.dump(outputs,fid)
