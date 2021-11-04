@@ -65,7 +65,7 @@ class Smooth_JPEG_Constant(optmz.ADMM):
         x = tf.zeros(compressedImg.shape,dtype = self.dtype) + 0.5
         return (x,self.Wt(negC))
 
-class Smooth_JPEG(Smooth_JPEG_Constant):
+class Smooth_JPEG(Smooth_JPEG_ACTUAL):
     pass
 
 class Smooth_JPEG_ACTUAL(optmz.ADMM):
@@ -128,7 +128,8 @@ class Smooth_JPEG_ACTUAL(optmz.ADMM):
                Smoothed image (YUV)
                Compressed image (YUV)
                Raw image (YUV)'''
-        x,Ax = self.xstep(y,u,By,negC)
+        #x,Ax = self.xstep(y,u,By,negC)
+        x = self.xupdate.last_call(y)
         return (x,self.Wt(negC))
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
@@ -341,6 +342,9 @@ class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
         return {'lmbda': self.lmdba}
     def call(self,inputs):
         A = 1.0 + self.lmbda*(tf.math.conj(self.fltr1)*self.fltr1 + tf.math.conj(self.fltr2)*self.fltr2)
+        return self.ifft(self.fft(inputs)/A)
+    def last_call(self,inputs):
+        A = 1.0 + 3*self.lmbda*(tf.math.conj(self.fltr1)*self.fltr1 + tf.math.conj(self.fltr2)*self.fltr2)
         return self.ifft(self.fft(inputs)/A)
 
 class Relax_SmoothJPEG(tf.keras.layers.Layer): # Since constraint does not depend on x, can just use stepsize alpha.

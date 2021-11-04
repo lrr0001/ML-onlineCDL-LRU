@@ -263,6 +263,7 @@ class ML_FISTA(optmz.FISTA):
 
         Dx = self.IFFT[0](self.dmul[0](z[1][0]))
         z = self.gradstep_trunc(x,frzD=False,layer=-1)
+        # Why is there no proxstep here?
         return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LF,self.cropAndMerge.crop(tf.squeeze(self.IFFT[0](z[0]),axis=-1)) + s_LF,itstats)
 
     def IFFT_all(self,z_coef):

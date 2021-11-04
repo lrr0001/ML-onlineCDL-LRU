@@ -2,12 +2,12 @@ import tensorflow as tf
 import pickle as pkl
 import numpy as np
 
-nof = [32,64]
+nof = [128,]
 noc = 3
 stride = [1]
-fltrSz = ((5,5),(7,7),)
+fltrSz = ((5,5),)
 noL = len(fltrSz)
-noi =  16
+noi =  32
 dtype = 'float64'
 
 D = []
