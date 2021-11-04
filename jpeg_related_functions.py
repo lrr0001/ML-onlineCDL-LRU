@@ -65,9 +65,6 @@ class Smooth_JPEG_Constant(optmz.ADMM):
         x = tf.zeros(compressedImg.shape,dtype = self.dtype) + 0.5
         return (x,self.Wt(negC))
 
-class Smooth_JPEG(Smooth_JPEG_ACTUAL):
-    pass
-
 class Smooth_JPEG_ACTUAL(optmz.ADMM):
     ''' This layer computes a smoothed version of a JPEG-compressed image. Input is an uncompressed RGB image.
         Output is a smoothed version of the image in YUV domain, a JPEG-compressed YUV image, and an uncompressed YUV image.''' 
@@ -131,6 +128,11 @@ class Smooth_JPEG_ACTUAL(optmz.ADMM):
         #x,Ax = self.xstep(y,u,By,negC)
         x = self.xupdate.last_call(y)
         return (x,self.Wt(negC))
+
+class Smooth_JPEG(Smooth_JPEG_ACTUAL):
+    pass
+
+
 def generate_dct2D_filters():
     x = tf.reshape(2*tf.range(8.) + 1,(8,1,1,1))
     y = tf.reshape(2*tf.range(8.) + 1,(1,8,1,1))
