@@ -129,70 +129,6 @@ class Smooth_JPEG_ACTUAL(optmz.ADMM):
         x = self.xupdate.last_call(y)
         return (x,self.Wt(negC))
 
-class Smooth_JPEGY(optm.ADMM):
-    ''' This layer computes a smoothed version of a JPEG-compressed image. Input is an uncompressed RGB image.
-        Output is a smoothed version of the image in YUV domain, a JPEG-compressed YUV image, and an uncompressed YUV image.''' 
-    def __init__(self,rho,alpha,noi,qY,lmbda,fftSz,*args,**kwargs):
-        self.qY = tf.reshape(qY,(1,1,1,64))
-        self.lmbda = lmbda
-        self.fftSz = fftSz
-        self.fltr = np.asarray([-1.,1.])
-        super().__init__(rho,alpha,noi,*args,**kwargs)
-        self.init_fun()
-    def init_fun(self):
-        #self.W = YUV2JPEG_Coef(dtype=self.dtype)
-        #self.W = RGB2JPEG_Coef(dtype=self.dtype)
-        #self.Wt = JPEG_Coef2YUV(dtype=self.dtype)
-        #self.Wt = JPEG_Coef2RGB(dtype=self.dtype)
-        self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
-        #self.relaxlayer = Relax_SmoothJPEG(dtype=self.dtype) # move alpha to uupdate
-        #self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
-        self.yupdate = ZUpdate_JPEGY_Implicit(self.qY,dtype=self.dtype)
-        rgb2yuv = RGB2YUV(dtype=self.dtype)
-        #self.uupdate = GammaUpdate_JPEG(self.alpha,dtype=self.dtype)
-
-    # These initializations happen once per input (negC,y,By,u):
-    def init_x(self,s,negC):
-        return (None,None)
-    def init_y(self,s,x,Ax,negC):
-        #return (self.Wt(negC),negC)
-        return (negC,None)
-    def init_u(self,s,Ax,By,negC):
-        #return [0.,0.,0.]
-        return (None,)
-    def get_negative_C(self,s):
-        Ws = s
-        Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
-        return quantize(Ws,self.qY,Yoffset)
-    def init_itstats(self,s):
-        return []
-
-
-    # iterative steps:
-    def xstep(self,y,u,By,negC):
-        return (self.xupdate(y),None)
-    def relax(self,Ax,By,negC):
-        #return self.relaxlayer((negC,By))
-        return (None,)
-    def ystep(self,x,u,Ax_relaxed,negC):
-        return (self.yupdate((x,negC)),None)
-    def ustep(self,u,Ax_relaxed,By,negC):
-        return (None,)
-
-    # Before and After:
-    def preprocess(self,s):
-        #rgb2yuv = RGB2YUV(dtype=self.dtype)
-        return rgb2yuv(s)[0]
-        #return s
-    def get_output(self,s,y,u,By,negC,itstats):
-        ''' Outputs:
-               Smoothed image (YUV)
-               Compressed image (YUV)
-               Raw image (YUV)'''
-        #x,Ax = self.xstep(y,u,By,negC)
-        x = self.xupdate.last_call(y)
-        return (x,negC)
-
 class Smooth_JPEG(Smooth_JPEG_ACTUAL):
     pass
 
@@ -521,21 +457,6 @@ class Enforce_JPEG_Constraint(tf.keras.layers.Layer):
         delta_value = [tf.where(Wx[channel] < min_value[channel],min_value[channel] - Wx[channel],delta_value[channel]) for channel in range(len(negC))]
         return self.Wt(delta_value)
 
-class Enforce_JPEGY_Constraint(tf.keras.layers.Layer):
-    def __init__(self,qY,*args,**kwargs):
-        super().__init__(*args,**kwargs)
-        self.qY = qY
-    def get_config(self):
-        return {'qY': self.qY}
-    def call(self,inputs):
-        fx,negC = inputs
-        zero = tf.cast(0.,self.dtype)
-        max_value = negC + q/2.
-        min_value = negC[channel] - q/2.
-        delta_value = tf.where(fx > max_value,max_value - fx,zero)
-        delta_value = tf.where(fx < min_value,min_value - fx,delta_value)
-        return delta_value
-
 class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
     def __init__(self,qY,qUV,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
@@ -547,12 +468,3 @@ class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
         delta_z = self.enforce_jpeg_constraint((z,negC)) # for precision
         z = z + delta_z
         return z
-
-class ZUpdate_JPEGY_Implicit(tf.keras.layers.Layer):
-    def __init__(self,qY,*args,**kwargs):
-        super().__init__(*args,**kwargs)
-        self.enforce_jpeg_constraint = Enforce_JPEGY_Constraint(qY,*args,**kwargs)
-    def call(self,inputs):
-        fx,negC = inputs
-        delta_z = self.enforce_jpeg_constraint((fx,negC))
-        return fx + delta_z

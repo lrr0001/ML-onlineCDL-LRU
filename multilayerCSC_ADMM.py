@@ -33,13 +33,6 @@ class MultiLayerCSC(optmz.ADMM):
         QWs
     '''
     def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
-        rho,mu_init = self.init_param(rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
-        self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),noL,fftSz,strides,D,n_components,cmplxdtype)
-        qY = tf.reshape(qY,(1,1,1,64))
-        qUV = tf.reshape(qUV,(1,1,1,64))
-        self.initializeJPEGLayers(cmpxdtype,qY,qUV)
-        
-    def init_param(self,rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs):
         self.longitstat = longitstat
         self.cmplxdtype = cmplxdtype
         dtype = cmplxdtype.real_dtype
@@ -48,8 +41,10 @@ class MultiLayerCSC(optmz.ADMM):
         self.noL = noL
         optmz.ADMM.__init__(self=self,rho = rho,alpha=alpha_init,noi = noi,dtype=dtype,*args,**kwargs)
         #self.alpha = tf.Variable(initial_value=alpha_init,trainable=True,name = 'alpha',dtype=dtype)
+        qY = tf.reshape(qY,(1,1,1,64))
+        qUV = tf.reshape(qUV,(1,1,1,64))
         self.cropAndMerge = cropAndMerge
-        return rho,mu_init
+        self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype)
     def get_config(self):
         config_dict = {'complex_dtype': self.cmplxdtype,
                        'num_of_Layers': self.noL,
@@ -61,7 +56,7 @@ class MultiLayerCSC(optmz.ADMM):
                        'record_iteration_stats': self.longitstat}
         return config_dict
 
-    def initializeLayers(self,rho,mu_init,alpha_init,b_init,noL,fftSz,strides,D,n_components,cmplxdtype):
+    def initializeLayers(self,rho,mu_init,alpha_init,b_init,qY,qUV,noL,fftSz,strides,D,n_components,cmplxdtype):
         self.strides = strides
         self.dictObj = []
         self.updateX_layer = []
@@ -89,8 +84,6 @@ class MultiLayerCSC(optmz.ADMM):
         self.updateZ_layer = []
         for ii in range(noL - 1): # Last shall be first and first shall be last.
             self.updateZ_layer.append(reversed_updateZ_layer[noL - 2 - ii])
-
-    def initializeJPEGLayers(self,cmplxdtype,qY,qUV):
         #self.W = jrf.YUV2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         #self.Wt = jrf.JPEG_Coef2YUV(dtype=cmplxdtype.real_dtype)
         self.W = jrf.RGB2JPEG_Coef(dtype=cmplxdtype.real_dtype)
@@ -821,52 +814,9 @@ class MultiLayerCSC(optmz.ADMM):
     def get_alpha(self):
         return self.relax_layer.alpha
 
-class MultiLayerCSC_SC(MultiLayerCSC):
-    def __init__(self,rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
-        rho,mu_init = self.init_param(rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
-        self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),noL,fftSz,strides,D,n_components,cmplxdtype)
-        qY = tf.reshape(qY,(1,1,1,64))
-        self.initializeJPEGLayers(cmpxdtype,qY)
-    def get_config(self):
-        config_dict = {'complex_dtype': self.cmplxdtype,
-                       'num_of_Layers': self.noL,
-                       'strides': self.strides,
-                       'qY': self.qY,
-                       'rho': self.rho,
-                       'noi': self.noi,
-                       'record_iteration_stats': self.longitstat}
-        return config_dict
-    def initializeJPEGLayers(self,cmplxdtype,qY):
-        self.updatev = jrf.ZUpdate_JPEGY_Implicit(qY,dtype = cmplxdtype.real_dtype)
-        self.qY = qY
-    def get_negative_C(self,s):
-        s_HF,s_LF,compressed = s
-        Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
-        QWs = jrf.quantize(compressed,self.qY,Yoffset)
-        return (self.cropAndMerge.crop(s_LF),QWs)
-    def init_x(self,s,negC):
-        s_HF,temp1,temp2 = s
-        s_LF,QWs = negC
-        x = []
-        x.append(self.xinit(self.FFT[0](util.addDim(s_HF)),layer = 0))
-        for ii in range(1,self.noL):
-            if self.strides[ii - 1] == 2:
-                x.append(self.xinit(util.freq_downsample(x[ii - 1]),layer=ii))
-            else:
-                x.append(self.xinit(x[ii - 1],layer = ii))
-        Ax = (-QWs,x)
-        return x,Ax
-
 class Wrap_ML_ADMM(tf.keras.layers.Layer):
     def __init__(self,rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
         self.admm = MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
-        super().__init__(dtype = self.admm.cmplxdtype.real_dtype,*args,**kwargs)
-    def call(self,inputs):
-        return self.admm.solve_coef(inputs)
-
-class Wrap_ML_ADMM_SC(tf.keras.layers.Layer):
-    def __init__(self,rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
-        self.admm = MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
         super().__init__(dtype = self.admm.cmplxdtype.real_dtype,*args,**kwargs)
     def call(self,inputs):
         return self.admm.solve_coef(inputs)

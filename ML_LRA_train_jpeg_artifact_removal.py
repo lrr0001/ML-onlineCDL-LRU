@@ -108,12 +108,12 @@ inputs = (highpass,lowpass,compressed)
 reconstruction,reconstruction2,itstats = CSC(inputs)
 #rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 #clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
-#clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
+clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
 #yuv_reconstruction = jrf.RGB2YUV(dtype=real_dtype)(clipped_reconstruction)
 import post_process_grad as ppg
 #model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 #model = tf.keras.Model(inputs,yuv_reconstruction)
-model = tf.keras.Model(inputs,reconstruction)
+model = tf.keras.Model(inputs,clipped_reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 
