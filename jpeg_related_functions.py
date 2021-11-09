@@ -163,7 +163,7 @@ class Smooth_JPEGY(optmz.ADMM):
     def get_negative_C(self,s):
         Ws = s
         Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
-        return quantize(Ws,self.qY,Yoffset)
+        return tf.squeeze(quantize(tf.expand_dims(Ws,axis=0),self.qY,Yoffset),axis = 0)
     def init_itstats(self,s):
         return []
 
