@@ -129,7 +129,7 @@ class Smooth_JPEG_ACTUAL(optmz.ADMM):
         x = self.xupdate.last_call(y)
         return (x,self.Wt(negC))
 
-class Smooth_JPEGY(optm.ADMM):
+class Smooth_JPEGY(optmz.ADMM):
     ''' This layer computes a smoothed version of a JPEG-compressed image. Input is an uncompressed RGB image.
         Output is a smoothed version of the image in YUV domain, a JPEG-compressed YUV image, and an uncompressed YUV image.''' 
     def __init__(self,rho,alpha,noi,qY,lmbda,fftSz,*args,**kwargs):
