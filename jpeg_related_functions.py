@@ -148,7 +148,7 @@ class Smooth_JPEGY(optmz.ADMM):
         #self.relaxlayer = Relax_SmoothJPEG(dtype=self.dtype) # move alpha to uupdate
         #self.yupdate = ZUpdate_JPEG(1.0,self.rho,self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
         self.yupdate = ZUpdate_JPEGY_Implicit(self.qY,dtype=self.dtype)
-        self.rgb2yuv = RGB2YUV(dtype=self.dtype)
+        rgb2yuv = RGB2YUV(dtype=self.dtype)
         #self.uupdate = GammaUpdate_JPEG(self.alpha,dtype=self.dtype)
 
     # These initializations happen once per input (negC,y,By,u):
@@ -182,7 +182,7 @@ class Smooth_JPEGY(optmz.ADMM):
     # Before and After:
     def preprocess(self,s):
         #rgb2yuv = RGB2YUV(dtype=self.dtype)
-        return self.rgb2yuv(s)[0]
+        return rgb2yuv(s)[0]
         #return s
     def get_output(self,s,y,u,By,negC,itstats):
         ''' Outputs:
