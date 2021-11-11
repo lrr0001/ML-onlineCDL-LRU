@@ -269,7 +269,7 @@ class JPEG_Coef2Y(tf.keras.layers.Layer):
         ydcc = tf.nn.depth_to_space(inputs,block_size=8)
         y_blks = tf.nn.conv2d(ydcc,self.idct_filters,strides=8,padding='VALID')
         y = tf.nn.depth_to_space(y_blks,block_size=8)
-        return Y
+        return y
 
 class RGB2JPEG_Coef(Color2JPEG_Coef):
     def __init__(self,*args,**kwargs):
