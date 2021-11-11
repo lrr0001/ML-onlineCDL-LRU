@@ -143,7 +143,7 @@ class Smooth_JPEGY(Smooth_JPEG_ACTUAL):
         self.W = Y2JPEG_Coef(dtype=self.dtype)
         self.Wt = JPEG_Coef2Y(dtype=self.dtype)
         self.xupdate = XUpdate_SmoothJPEG(self.lmbda,self.fftSz,tf.reshape(self.fltr,(1,2,1,1)),tf.reshape(self.fltr,(1,1,2,1)),dtype = self.dtype)
-        self.yupdate = ZUpdate_JPEGY_Implicit(self.qY,self.qUV,self.W,self.Wt,dtype=self.dtype)
+        self.yupdate = ZUpdate_JPEGY_Implicit(self.qY,self.W,self.Wt,dtype=self.dtype)
         self.rgb2yuv = RGB2YUV(dtype = self.dtype)
     def preprocess(self,s):
         s_YUV = rgb2yuv(s)
