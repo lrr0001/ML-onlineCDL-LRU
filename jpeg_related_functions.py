@@ -532,7 +532,7 @@ class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
 class ZUpdate_JPEGY_Implicit(tf.keras.layers.Layer):
     def __init__(self,qY,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.enforce_JPEG_constraint = Enforce_JPEGY_Constraint(qY,W,Wt,*args,**kwargs)
+        self.enforce_jpeg_constraint = Enforce_JPEGY_Constraint(qY,W,Wt,*args,**kwargs)
     def call(self,inputs):
         fx,negC = inputs
         delta_z = self.enforce_jpeg_constraint((fx,negC))
