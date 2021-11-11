@@ -266,7 +266,7 @@ class JPEG_Coef2Y(tf.keras.layers.Layer):
     def get_config(self):
         return {'idct_filters': self.idct_filters}
     def call(self,inputs):
-        ydcc = tf.nn.depth_to_space(ydcc_blks,block_size=8)
+        ydcc = tf.nn.depth_to_space(inputs,block_size=8)
         y_blks = tf.nn.conv2d(ydcc,self.idct_filters,strides=8,padding='VALID')
         y = tf.nn.depth_to_space(y_blks,block_size=8)
         return Y
