@@ -67,11 +67,21 @@ example_structure = {'highpass': tf.io.FixedLenFeature([], tf.string), 'lowpass'
 def restore_double(x):
     return tf.io.parse_tensor(x,real_dtype)
 
+class RGB2Y(tf.keras.layers.Layer):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.rgb2yuv = jrf.RGB2YUV(dtype = self.dtype)
+    def call(self,inputs):
+        s_YUV = self.rgb2yuv(inputs)
+        return s_YUV[slice(None),slice(None),slice(None),slice(0,1)]
+
+rgb2y = RGB2Y(dtype=real_dtype)
+
 def _parse_image_function(example_proto):
     x = tf.io.parse_single_example(example_proto, example_structure)
     highpass = restore_double(x['highpass'])
     lowpass = restore_double(x['lowpass'])
-    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
+    return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),rgb2y(restore_double(x['raw'])))
 
 raw_dataset = tf.data.TFRecordDataset([datapath + trainfile])
 dataset = raw_dataset.map(_parse_image_function)

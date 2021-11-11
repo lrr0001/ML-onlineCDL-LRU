@@ -1,6 +1,7 @@
 import tensorflow as tf
 import pickle as pkl
 import jpeg_related_functions as jrf
+
 # ************FUNCTION DEFINITION******************
 def savePatch(coord,lowpass,highpass,raw,padding,patch_size,qY,qUV,Yoffset,datapath,filename,dtype):
     rowCoord,colCoord = coord
@@ -9,11 +10,18 @@ def savePatch(coord,lowpass,highpass,raw,padding,patch_size,qY,qUV,Yoffset,datap
     rawPatch =  raw[slice(rowCoord,rowCoord + patch_size[0]),slice(colCoord,colCoord + patch_size[1]),slice(None)]
     #W = jrf.YUV2JPEG_Coef(dtype = dtype)
     #Wt = jrf.JPEG_Coef2YUV(dtype = dtype)
-    W = jrf.RGB2JPEG_Coef(dtype = dtype)
-    Wt = jrf.JPEG_Coef2RGB(dtype = dtype)
+    #W = jrf.RGB2JPEG_Coef(dtype = dtype)
+    #Wt = jrf.JPEG_Coef2RGB(dtype = dtype)
+    W = jrf.Y2JPEG_Coef(dtype = dtype)
+    Wt = jrf.JPEG_Coef2Y(dtype = dtype)
     #compressedPatch = Wt(jrf.threeChannelQuantize(W(jrf.RGB2YUV(dtype=dtype)(tf.expand_dims(rawPatch,axis=0))),qY,qUV,Yoffset))
-    compressedPatch = Wt(jrf.threeChannelQuantize(W(tf.expand_dims(rawPatch,axis=0)),qY,qUV,Yoffset))
+    #compressedPatch = Wt(jrf.threeChannelQuantize(W(tf.expand_dims(rawPatch,axis=0)),qY,qUV,Yoffset))
+    #compressedPatch = tf.squeeze(compressedPatch,axis=0)
+    rawPatch_YUV = jrf.RGB2YUV(dtype=dtype)(tf.expand_dims(rawpatch,axis=0))
+    rawPatch_Y = rawPatch_YUV[slice(None),slice(None),slice(None),slice(0,1)]
+    compressedPatch = Wt(jrf.quantize(W(rawPatch_Y),qY,Yoffset))
     compressedPatch = tf.squeeze(compressedPatch,axis=0)
+
     highpassPatch = highpass[slice(rowCoord - padding[0][0],rowCoord + patch_size[0] + padding[0][1]),slice(colCoord - padding[1][0],colCoord + patch_size[1] + padding[1][1]),slice(None)]
     fid_raw = open(datapath + 'raw/' + filename,'wb')
     pkl.dump(rawPatch,fid_raw)
