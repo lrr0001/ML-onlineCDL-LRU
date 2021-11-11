@@ -202,6 +202,16 @@ class Color2JPEG_Coef(tf.keras.layers.Layer):
         vdcc_blks = tf.nn.conv2d(v_ds,self.dct_filters,strides=8,padding='VALID')
         return (ydcc_blks,udcc_blks,vdcc_blks) # discrete cosine coefficients
 
+class Y2JPEG_Coef(tf.keras.layers.Layer):
+    def __init__(self,*args,**kwargs):
+       super().__init(*args,**kwargs)
+       self.dct_filters = tf.cast(generate_dct2D_filters(),dtype=self.dtype)
+    def get_config(self):
+        return {'dct_filters':self.dct_filters}
+    def call(self,inputs):
+        ydcc_blks = tf.nn.conv2d(inputs,self.dct_filters,strides=8,padding='VALID')
+        return ydcc_blks
+
 class JPEG_Coef2Color(tf.keras.layers.Layer):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
@@ -228,6 +238,18 @@ class JPEG_Coef2Color(tf.keras.layers.Layer):
         yuv = tf.concat((y,u,v),axis=3)
         #return tf.clip_by_value(tf.image.yuv_to_rgb(yuv),0.,1.)
         return self.colortransform(yuv)
+
+class JPEG_Coef2Y(tf.keras.layers.Layer):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.idct_filters = tf.cast(generate_idct2D_filters(),dtype=self.dtype)
+    def get_config(self):
+        return {'idct_filters': self.idct_filters}
+    def call(self,inputs):
+        ydcc = tf.nn.depth_to_space(ydcc_blks,block_size=8)
+        y_blks = tf.nn.conv2d(ydcc,self.idct_filters,strides=8,padding='VALID')
+        y = tf.nn.depth_to_space(y_blks,block_size=8)
+        return Y
 
 class RGB2JPEG_Coef(Color2JPEG_Coef):
     def __init__(self,*args,**kwargs):
@@ -457,10 +479,40 @@ class Enforce_JPEG_Constraint(tf.keras.layers.Layer):
         delta_value = [tf.where(Wx[channel] < min_value[channel],min_value[channel] - Wx[channel],delta_value[channel]) for channel in range(len(negC))]
         return self.Wt(delta_value)
 
+class Enforce_JPEGY_Constraint(tf.keras.layers.Layer):
+    def __init__(self,qY,W,Wt,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.qY = qY
+        self.W = W
+        self.Wt = Wt
+    def get_config(self):
+        return {'qY': self.qY}
+    def call(self,inputs):
+        fx,negC = inputs
+        zero = tf.cast(0.,self.dtype)
+        max_value = negC + self.qY/2.
+        min_value = negC - self.qY/2.
+        Wx = self.W(fx)
+        delta_value = tf.where(Wx > max_value,max_value - Wx,zero)
+        delta_value = tf.where(Wx < min_value,min_value - Wx,delta_value)
+        return self.Wt(delta_value)
+
 class ZUpdate_JPEG_Implicit(tf.keras.layers.Layer):
     def __init__(self,qY,qUV,W,Wt,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.enforce_jpeg_constraint = Enforce_JPEG_Constraint(qY,qUV,W,Wt,*args,**kwargs)
+    def call(self,inputs):
+        fx,negC = inputs
+        delta_z = self.enforce_jpeg_constraint((fx,negC))
+        z = fx + delta_z
+        delta_z = self.enforce_jpeg_constraint((z,negC)) # for precision
+        z = z + delta_z
+        return z
+
+class ZUpdate_JPEGY_Implicit(tf.keras.layers.Layer):
+    def __init__(self,qY,W,Wt,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.enforce_JPEG_constraint = Enforce_JPEGY_Constraint(qY,W,Wt,*args,**kwargs)
     def call(self,inputs):
         fx,negC = inputs
         delta_z = self.enforce_jpeg_constraint((fx,negC))

@@ -37,7 +37,7 @@ class MultiLayerCSC(optmz.ADMM):
         self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),noL,fftSz,strides,D,n_components,cmplxdtype)
         qY = tf.reshape(qY,(1,1,1,64))
         qUV = tf.reshape(qUV,(1,1,1,64))
-        self.initializeJPEGLayers(cmpxdtype,qY,qUV)
+        self.initializeJPEGLayers(cmplxdtype,qY,qUV)
         
     def init_param(self,rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs):
         self.longitstat = longitstat
@@ -835,7 +835,46 @@ class Get_Obj(tf.keras.layers.Layer):
         x,negC = inputs
         return self.ml_csc.admm.get_obj(x,negC)
 
-
+class MultiLayerCSC_SC(MultiLayerCSC):
+    def __init__(self,rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
+        rho,mu_init = self.init_param(rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
+        self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),noL,fftSz,strides,D,n_components,cmplxdtype)
+        qY = tf.reshape(qY,(1,1,1,64))
+        self.initializeJPEGLayers(cmplxdtype,qY)
+    def get_config(self):
+        config_dict = {'complex_dtype': self.cmplxdtype,
+                       'num_of_Layers': self.noL,
+                       'strides': self.strides,
+                       'qY': self.qY,
+                       'rho': self.rho,
+                       'noi': self.noi,
+                       'record_iteration_stats': self.longitstat}
+        return config_dict
+    def initializeJPEGLayers(self,cmplxdtye,qY)
+        #self.W = jrf.YUV2JPEG_Coef(dtype=cmplxdtype.real_dtype)
+        #self.Wt = jrf.JPEG_Coef2YUV(dtype=cmplxdtype.real_dtype)
+        self.W = jrf.Y2JPEG_Coef(dtype=cmplxdtype.real_dtype)
+        self.Wt = jrf.JPEG_Coef2Y(dtype=cmplxdtype.real_dtype)
+        self.updatev = jrf.ZUpdate_JPEGY_Implicit(qY,self.W,self.Wt,dtype = cmplxdtype.real_dtype)
+        self.qY = qY
+    def get_negative_C(self,s):
+        s_HF,s_LF,compressed = s
+        Ws = self.W(compressed)
+        Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
+        QWs = jrf.quantize(Ws,self.qY,Yoffset)
+        return (self.cropAndMerge.crop(s_LF),QWs)
+    def init_x(self,s,negC):
+        s_HF,temp1,temp2 = s
+        s_LF,QWs = negC
+        x = []
+        x.append(self.xinit(self.FFT[0](util.addDim(s_HF)),layer = 0))
+        for ii in range(1,self.noL):
+            if self.strides[ii - 1] == 2:
+                x.append(self.xinit(util.freq_downsample(x[ii - 1]),layer=ii))
+            else:
+                x.append(self.xinit(x[ii - 1],layer = ii))
+        Ax = (-QWs,x)
+        return x,Ax
 
 class GetNextIterX(tf.keras.layers.Layer):
     '''
