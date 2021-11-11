@@ -69,9 +69,9 @@ class Smooth_JPEG_ACTUAL(optmz.ADMM):
     ''' This layer computes a smoothed version of a JPEG-compressed image. Input is an uncompressed RGB image.
         Output is a smoothed version of the image in YUV domain, a JPEG-compressed YUV image, and an uncompressed YUV image.''' 
     def __init__(self,rho,alpha,noi,qY,qUV,lmbda,fftSz,*args,**kwargs):
-        self.init_cnsts(rho,alpha,noi,lmbda,fftSz,*args,**kwargs)
         self.qY = tf.reshape(qY,(1,1,1,64))
         self.qUV = tf.reshape(qUV,(1,1,1,64))
+        self.init_cnsts(rho,alpha,noi,lmbda,fftSz,*args,**kwargs)
     def init_cnsts(self,rho,alpha,noi,lmbda,fftSz,*args,**kwargs):
         self.lmbda = lmbda
         self.fftSz = fftSz
@@ -133,8 +133,8 @@ class Smooth_JPEG_ACTUAL(optmz.ADMM):
 
 class Smooth_JPEGY(Smooth_JPEG_ACTUAL):
     def __init__(self,rho,alpha,noi,qY,lmbda,fftSz,*args,**kwargs):
-        self.init_cnsts(rho,alpha,noi,lmbda,fftSz,*args,**kwargs)
         self.qY = tf.reshape(qY,(1,1,1,64))
+        self.init_cnsts(rho,alpha,noi,lmbda,fftSz,*args,**kwargs)
     def get_negative_C(self,s):
         Ws = self.W(s)
         Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,self.dtype),tf.cast(0.,self.dtype))
