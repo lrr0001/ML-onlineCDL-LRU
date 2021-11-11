@@ -224,7 +224,7 @@ class Color2JPEG_Coef(tf.keras.layers.Layer):
 
 class Y2JPEG_Coef(tf.keras.layers.Layer):
     def __init__(self,*args,**kwargs):
-       super().__init(*args,**kwargs)
+       super().__init__(*args,**kwargs)
        self.dct_filters = tf.cast(generate_dct2D_filters(),dtype=self.dtype)
     def get_config(self):
         return {'dct_filters':self.dct_filters}
