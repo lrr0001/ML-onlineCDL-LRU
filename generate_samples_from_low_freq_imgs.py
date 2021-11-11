@@ -17,7 +17,7 @@ def savePatch(coord,lowpass,highpass,raw,padding,patch_size,qY,qUV,Yoffset,datap
     #compressedPatch = Wt(jrf.threeChannelQuantize(W(jrf.RGB2YUV(dtype=dtype)(tf.expand_dims(rawPatch,axis=0))),qY,qUV,Yoffset))
     #compressedPatch = Wt(jrf.threeChannelQuantize(W(tf.expand_dims(rawPatch,axis=0)),qY,qUV,Yoffset))
     #compressedPatch = tf.squeeze(compressedPatch,axis=0)
-    rawPatch_YUV = jrf.RGB2YUV(dtype=dtype)(tf.expand_dims(rawpatch,axis=0))
+    rawPatch_YUV = jrf.RGB2YUV(dtype=dtype)(tf.expand_dims(rawPatch,axis=0))
     rawPatch_Y = rawPatch_YUV[slice(None),slice(None),slice(None),slice(0,1)]
     compressedPatch = Wt(jrf.quantize(W(rawPatch_Y),qY,Yoffset))
     compressedPatch = tf.squeeze(compressedPatch,axis=0)
