@@ -146,7 +146,7 @@ class Smooth_JPEGY(Smooth_JPEG_ACTUAL):
         self.yupdate = ZUpdate_JPEGY_Implicit(self.qY,self.W,self.Wt,dtype=self.dtype)
         self.rgb2yuv = RGB2YUV(dtype = self.dtype)
     def preprocess(self,s):
-        s_YUV = rgb2yuv(s)
+        s_YUV = self.rgb2yuv(s)
         return s_YUV[slice(None),slice(None),slice(None),slice(0,1)]
 
 class Smooth_JPEG(Smooth_JPEG_ACTUAL):
