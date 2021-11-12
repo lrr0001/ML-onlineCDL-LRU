@@ -3,7 +3,7 @@ import pickle as pkl
 import numpy as np
 
 nof = [128,]
-noc = 3
+noc = 1
 stride = [1]
 fltrSz = ((5,5),)
 noL = len(fltrSz)
