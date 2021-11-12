@@ -40,7 +40,8 @@ fltrSz = problem_param['fltrSz']
 real_dtype = data_param['dtype']
 noi = problem_param['noi']
 noL = problem_param['noL']
-noc = problem_param['noc']
+#noc = problem_param['noc']
+noc = 1
 datapath = problem_param['datapath']
 trainfile = problem_param['trainfile']
 padding = data_param['padding']
@@ -107,6 +108,7 @@ for (x,y) in dataset_batch:
 
 #   ******** BUILD MODEL ********
 CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
+
 
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
