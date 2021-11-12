@@ -850,7 +850,7 @@ class MultiLayerCSC_SC(MultiLayerCSC):
                        'noi': self.noi,
                        'record_iteration_stats': self.longitstat}
         return config_dict
-    def initializeJPEGLayers(self,cmplxdtye,qY)
+    def initializeJPEGLayers(self,cmplxdtye,qY):
         #self.W = jrf.YUV2JPEG_Coef(dtype=cmplxdtype.real_dtype)
         #self.Wt = jrf.JPEG_Coef2YUV(dtype=cmplxdtype.real_dtype)
         self.W = jrf.Y2JPEG_Coef(dtype=cmplxdtype.real_dtype)
