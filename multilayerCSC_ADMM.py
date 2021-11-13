@@ -1037,9 +1037,9 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         with tf.name_scope(self.name):
             self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
             self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
-        self.relu = util.BiasedReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+        #self.relu = util.BiasedReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
-        #self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
         ppg.PostProcess.add_update(self.mu.name,self._update_mu)
