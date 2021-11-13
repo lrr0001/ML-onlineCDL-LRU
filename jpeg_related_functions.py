@@ -131,7 +131,7 @@ class Smooth_JPEG_ACTUAL(optmz.ADMM):
         x = self.xupdate.last_call(y)
         return (x,self.Wt(negC))
 
-class Smooth_JPEGY(Smooth_JPEG_ACTUAL):
+class Smooth_JPEGY_ACTUAL(Smooth_JPEG_ACTUAL):
     def __init__(self,rho,alpha,noi,qY,lmbda,fftSz,*args,**kwargs):
         self.qY = tf.reshape(qY,(1,1,1,64))
         self.init_cnsts(rho,alpha,noi,lmbda,fftSz,*args,**kwargs)
@@ -148,6 +148,32 @@ class Smooth_JPEGY(Smooth_JPEG_ACTUAL):
     def preprocess(self,s):
         s_YUV = self.rgb2yuv(s)
         return s_YUV[slice(None),slice(None),slice(None),slice(0,1)]
+
+class Smooth_JPEGY_Constant(Smooth_JPEGY_ACTUAL):
+    def init_x(self,s,negC):
+        return (None,None)
+    def init_y(self,s,x,Ax,negC):
+        return (None,None)
+    def init_u(self,s,Ax,By,negC):
+        return (None,)
+    def init_itstats(self,s):
+        return []
+    # iterative steps:
+    def xstep(self,y,u,By,negC):
+        return (None,None)
+    def relax(self,Ax,By,negC):
+        return (None,)
+    def ystep(self,x,u,Ax_relaxed,negC):
+        return (None,None)
+    def ustep(self,u,Ax_relaxed,By,negC):
+        return (None,)
+    def get_output(self,s,y,u,By,negC,itstats):
+        compressedImg = self.Wt(negC)
+        x = tf.zeros(compressedImg.shape,dtype = self.dtype) + 0.5
+        return (x,self.Wt(negC))
+
+class Smooth_JPEGY(Smooth_JPEGY_Constant):
+    pass
 
 class Smooth_JPEG(Smooth_JPEG_ACTUAL):
     pass
