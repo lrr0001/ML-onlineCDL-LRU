@@ -75,7 +75,7 @@ dataset_batch = dataset_batch.repeat()
 
 ii = 0
 for (x,y) in dataset_batch:
-    print(tf.reduce_max(tf.abs(croppedHighpass + croppedLowpass - x[2])))
+    print(tf.reduce_max(tf.abs(cropAndMerge.crop(x[0]) + cropAndMerge.crop(x[1]) - x[2])))
     print(tf.reduce_max(x[2]))
     print(tf.reduce_min(x[2]))
     ii += 1
