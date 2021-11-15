@@ -47,6 +47,11 @@ assert(paddingDiff[1][0] >= 0)
 assert(paddingDiff[1][1] >= 0)
 print(paddingDiff)
 
+startr = paddingDiff[0][0]
+startc = paddingDiff[1][0]
+endr = targetSz[0] + padding[0][0] + padding[0][1] - paddingDiff[0][1]
+endc = targetSz[1] + padding[1][0] + padding[1][1] - paddingDiff[1][1]
+
 real_dtype = 'float64'
 example_structure = {'highpass': tf.io.FixedLenFeature([], tf.string), 'lowpass': tf.io.FixedLenFeature([], tf.string), 'compressed': tf.io.FixedLenFeature([], tf.string),'raw': tf.io.FixedLenFeature([], tf.string)}
 
