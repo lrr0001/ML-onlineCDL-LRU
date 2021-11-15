@@ -53,7 +53,7 @@ endr = targetSz[0] + padding[0][0] + padding[0][1] - paddingDiff[0][1]
 endc = targetSz[1] + padding[1][0] + padding[1][1] - paddingDiff[1][1]
 
 real_dtype = 'float64'
-batchsize = 1
+batch_size = 1
 example_structure = {'highpass': tf.io.FixedLenFeature([], tf.string), 'lowpass': tf.io.FixedLenFeature([], tf.string), 'compressed': tf.io.FixedLenFeature([], tf.string),'raw': tf.io.FixedLenFeature([], tf.string)}
 
 def restore_double(x):
