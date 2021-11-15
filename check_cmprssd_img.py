@@ -9,6 +9,43 @@ print(tf.reduce_max(cmprssdImg))
 print(tf.reduce_min(cmprssdImg))
 
 
+modelname = 'ML_LRA_'
+databasename = 'BSDS500/'
+#databasename = 'simpleTest/'
+experimentname = 'experiment1/'
+experimentpath = 'data/experiment/' + databasename + experimentname
+checkpointfilename = modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
+timesname = modelname + 'times.pkl'
+modelfilename = modelname + 'initial_model.ckpt'
+fid = open(experimentpath + 'problem_param.pckl','rb')
+problem_param = pkl.load(fid)
+fid.close()
+data_param = problem_param['data_param']
+targetSz = data_param['target_size']
+qY = data_param['qY']
+qUV = data_param['qUV']
+strides = problem_param['stride']
+fltrSz = problem_param['fltrSz']
+real_dtype = data_param['dtype']
+noi = problem_param['noi']
+noL = problem_param['noL']
+noc = problem_param['noc']
+datapath = problem_param['datapath']
+trainfile = problem_param['trainfile']
+padding = data_param['padding']
+
+
+#   ******** CROPPING AND PADDING ********
+cropAndMerge = mlcsc.CropPadObject(targetSz,strides,[np.asarray(ks) for ks in fltrSz],real_dtype)
+paddingTuple = cropAndMerge.paddingTuple
+fftSz = cropAndMerge.get_fft_size(targetSz,strides)
+paddingDiff = ((padding[0][0] - paddingTuple[0][0],padding[0][1] - paddingTuple[0][1]),(padding[1][0] - paddingTuple[1][0],padding[1][1] - paddingTuple[1][1]))
+assert(paddingDiff[0][0] >= 0)
+assert(paddingDiff[0][1] >= 0)
+assert(paddingDiff[1][0] >= 0)
+assert(paddingDiff[1][1] >= 0)
+print(paddingDiff)
+
 real_dtype = 'float64'
 example_structure = {'highpass': tf.io.FixedLenFeature([], tf.string), 'lowpass': tf.io.FixedLenFeature([], tf.string), 'compressed': tf.io.FixedLenFeature([], tf.string),'raw': tf.io.FixedLenFeature([], tf.string)}
 
@@ -29,41 +66,11 @@ dataset = raw_dataset.map(_parse_image_function)
 dataset_batch = dataset.batch(batch_size)
 dataset_batch = dataset_batch.repeat()
 
-dataset_iterator = dataset_batch.__iter__()
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
-
-(x,y) = dataset_iterator.get_next()
-print(tf.reduce_max(x[2]))
-print(tf.reduce_min(x[2]))
-
+ii = 0
+for (x,y) in dataset_batch:
+    print(tf.reduce_max(tf.abs(croppedHighpass + croppedLowpass - x[2])))
+    print(tf.reduce_max(x[2]))
+    print(tf.reduce_min(x[2]))
+    ii += 1
+    if ii > 8:
+        break
