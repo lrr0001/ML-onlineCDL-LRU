@@ -8,6 +8,8 @@ fid.close()
 print(tf.reduce_max(cmprssdImg))
 print(tf.reduce_min(cmprssdImg))
 
+
+real_dtype = 'float64'
 example_structure = {'highpass': tf.io.FixedLenFeature([], tf.string), 'lowpass': tf.io.FixedLenFeature([], tf.string), 'compressed': tf.io.FixedLenFeature([], tf.string),'raw': tf.io.FixedLenFeature([], tf.string)}
 
 def restore_double(x):
