@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import pickle as pkl
+import multilayerCSC_ADMM as mlcsc
 fid = open('data/scratchwork/BSDS500/patches/train/compressed/271008.jpg.pckl_12_7.pckl','rb')
 cmprssdImg = pkl.load(fid)
 fid.close()
