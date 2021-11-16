@@ -1061,9 +1061,7 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         b = tf.cond(update_cond,lambda: self.bprev + deltab,lambda: self.bprev)
         b = tf.where(b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),b)
         count = tf.cond(update_cond,lambda: 0,lambda: self.count + 1)
-        print(deltab.shape)
-        print(tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype).shape)
-        return [self.b.assign(b),self.count.assign(count),self.bprev.assign(b),self.deltab.assign(tf.cond(update_cond,lambda: tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),lambda: deltab))]
+        return [self.b.assign(b),self.count.assign(count),self.bprev.assign(b),self.deltab.assign(tf.cond(update_cond,lambda: tf.zeros(self.deltab.shape,dtype=tf.as_dtype(self.dtype).real_dtype),lambda: deltab))]
 
     def _update_mu(self):
         return [self.mu.assign(tf.where(self.mu < 1e-3,tf.cast(1e-3,dtype=tf.as_dtype(self.dtype).real_dtype),self.mu))]
