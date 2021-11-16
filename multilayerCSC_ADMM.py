@@ -1045,8 +1045,8 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
             self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
             self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
             self.bprev = tf.Variable(b_init/(rho*mu_init),trainable=False,dtype=tf.as_dtype(self.dtype).real_dtype,name='bprev')
-            self.deltab = tf.Variable(0, trainable = False,dtype = tf.as_dtype(self.dtye).real_dtype,name = 'deltab')
-            self.count = tf.Variable(0,trainable = False,dtype = tf.as_dtype(self.dtye).real_dtype,name = 'count')
+            self.deltab = tf.Variable(0, trainable = False,dtype = tf.as_dtype(self.dtype).real_dtype,name = 'deltab')
+            self.count = tf.Variable(0,trainable = False,dtype = tf.as_dtype(self.dtype).real_dtype,name = 'count')
         #self.relu = util.BiasedReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
