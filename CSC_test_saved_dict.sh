@@ -2,13 +2,13 @@
 databasename='BSDS500/'
 
 #modelname + 'checkpoint_epoch_{epoch:02d}.ckpt'
-#modelname='ML_LRA_'
-#checkpointstr='checkpoint_epoch_'
-#extension='.ckpt.pkl'
-#for ii in {10..32..1}
-#  do
-#    python CSCadmmScript_learned_dict.py $databasename 0 16 $modelname$checkpointstr$ii$extension
-#  done
+modelname='ML_LRA_'
+checkpointstr='checkpoint_epoch_'
+extension='.ckpt.pkl'
+for ii in {10..96..16}
+  do
+    python CSCadmmScript_learned_dict.py $databasename 0 32 $modelname$checkpointstr$ii$extension
+  done
 #modelname='ML_FISTA_'
 #extension='.pkl'
 #for ii in {10..32..1}
@@ -29,20 +29,20 @@ databasename='BSDS500/'
 #    python CSCfistaScript_learned_dict.py $databasename 12 48 $modelname$checkpointstr$ii$extension
 #  done
 
-modelname='ML_LRA_'
-checkpointstr='checkpoint_epoch_0'
-extension='.ckpt.pkl'
-ii=0
-for iter in {4..48..4} 
-  do
-    python CSCadmmScript_init.py $databasename 0 $iter $modelname$checkpointstr$ii$extension
-  done
+#modelname='ML_LRA_'
+#checkpointstr='checkpoint_epoch_0'
+#extension='.ckpt.pkl'
+#ii=0
+#for iter in {4..48..4} 
+#  do
+#    python CSCadmmScript_init.py $databasename 0 $iter $modelname$checkpointstr$ii$extension
+#  done
 
-modelname='ML_FISTA_'
-extension='.pkl'
-ii=0
-for iter in {4..48..4}
-  do
-    python CSCfistaScript_init.py $databasename 12 $iter $modelname$checkpointstr$ii$extension
-  done
+#modelname='ML_FISTA_'
+#extension='.pkl'
+#ii=0
+#for iter in {4..48..4}
+#  do
+#    python CSCfistaScript_init.py $databasename 12 $iter $modelname$checkpointstr$ii$extension
+#  done
 

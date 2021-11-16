@@ -196,11 +196,13 @@ def test_ADMM_CSC_saved_dict(rho,alpha_init,noi,databasename,steps_per_epoch,num
     def restore_double(x):
         return tf.io.parse_tensor(x,real_dtype)
 
+rgb2y = jrf.RGB2Y(dtype=real_dtype)
+
     def _parse_image_function(example_proto):
         x = tf.io.parse_single_example(example_proto, example_structure)
         highpass = restore_double(x['highpass'])
         lowpass = restore_double(x['lowpass'])
-        return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),restore_double(x['raw']))
+        return ((highpass[slice(startr,endr),slice(startc,endc),slice(None)],lowpass[slice(startr,endr),slice(startc,endc),slice(None)],restore_double(x['compressed'])),rgb2y(restore_double(x['raw'])))
 
     raw_dataset = tf.data.TFRecordDataset([datapath + valfile])
     dataset = raw_dataset.map(_parse_image_function)
@@ -210,7 +212,11 @@ def test_ADMM_CSC_saved_dict(rho,alpha_init,noi,databasename,steps_per_epoch,num
 
     #   ******** BUILD MODEL ********
     #CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
-    CSC_Wrap = mlcsc.Wrap_ML_ADMM(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,[tf.reshape(D[ii],(1,) + D[ii].shape) for ii in range(len(D))],n_components,noi,noL,cmplxdtype)
+
+
+#    CSC_Wrap = mlcsc.Wrap_ML_ADMM(rho,alpha_init,mu_init,b_init,qY,qUV,cropAndMerge,fftSz,strides,[tf.reshape(D[ii],(1,) + D[ii].shape) for ii in range(len(D))],n_components,noi,noL,cmplxdtype)
+    CSC_Wrap = mlcsc.Wrap_ML_ADMM_SC(rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,[tf.reshape(D[ii],(1,) + D[ii].shape) for ii in range(len(D))],n_components,noi,noL,cmplxdtype)
+
     Get_Obj = mlcsc.Get_Obj(CSC_Wrap)
 
     # Build Input Layers

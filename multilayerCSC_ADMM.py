@@ -827,6 +827,13 @@ class Wrap_ML_ADMM(tf.keras.layers.Layer):
     def call(self,inputs):
         return self.admm.solve_coef(inputs)
 
+class Wrap_ML_ADMM_SC(tf.keras.layers.Layer):
+    def __init__(self,rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
+        self.admm = MultiLayerCSC_SC(rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
+        super().__init__(dtype = self.admm.cmplxdtype.real_dtype,*args,**kwargs)
+    def call(self,inputs):
+        return self.admm.solve_coef(inputs)
+
 class Get_Obj(tf.keras.layers.Layer):
     def __init__(self,ml_csc,*args,**kwargs):
         self.ml_csc = ml_csc
