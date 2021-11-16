@@ -172,7 +172,7 @@ class Smooth_JPEGY_Constant(Smooth_JPEGY_ACTUAL):
         x = tf.zeros(compressedImg.shape,dtype = self.dtype) + 0.5
         return (x,self.Wt(negC))
 
-class Smooth_JPEGY(Smooth_JPEGY_Constant):
+class Smooth_JPEGY(Smooth_JPEGY_Actual):
     pass
 
 class Smooth_JPEG(Smooth_JPEG_ACTUAL):

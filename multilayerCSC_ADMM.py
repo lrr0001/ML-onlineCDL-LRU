@@ -1044,15 +1044,25 @@ class GetNextIterZFreq_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
         with tf.name_scope(self.name):
             self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
             self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b') # Is this an active design decision to avoid dependence on mu?
-        self.relu = util.BiasedReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
+            self.bprev = tf.Variable(b_init/(rho*mu_init),trainable=False,dtype=tf.as_dtype(self.dtype).real_dtype,name='bprev')
+            self.deltab = tf.Variable(0, trainable = False,dtype = tf.as_dtype(self.dtye).real_dtype,name = 'deltab')
+            self.count = tf.Variable(0,trainable = False,dtype = tf.as_dtype(self.dtye).real_dtype,name = 'count')
+        #self.relu = util.BiasedReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
-        #self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
+        self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.ifft = ifft
+        self.maxcount = 32
         ppg.PostProcess.add_update(self.b.name,self._update_b)
         ppg.PostProcess.add_update(self.mu.name,self._update_mu)
 
     def _update_b(self):
-        return [self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b)),]
+        deltab = (self.count*self.deltab + self.b - self.bprev)/(self.b + 1)
+        update_cond = self.count == self.maxcount
+        b = tf.cond(update_cond,self.bprev + deltab,self.bprev)
+        b = tf.where(b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),b)
+        count = tf.cond(update_cond,0,self.count + 1)
+        return [self.b.assign(b),self.count.assign(count),self.bprev.assign(b),self.deltab.assign(tf.cond(update_cond,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),deltab))]
+
     def _update_mu(self):
         return [self.mu.assign(tf.where(self.mu < 1e-3,tf.cast(1e-3,dtype=tf.as_dtype(self.dtype).real_dtype),self.mu))]
 
