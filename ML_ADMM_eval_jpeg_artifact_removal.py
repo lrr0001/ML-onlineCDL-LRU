@@ -196,7 +196,7 @@ def test_ADMM_CSC_saved_dict(rho,alpha_init,noi,databasename,steps_per_epoch,num
     def restore_double(x):
         return tf.io.parse_tensor(x,real_dtype)
 
-rgb2y = jrf.RGB2Y(dtype=real_dtype)
+    rgb2y = jrf.RGB2Y(dtype=real_dtype)
 
     def _parse_image_function(example_proto):
         x = tf.io.parse_single_example(example_proto, example_structure)
