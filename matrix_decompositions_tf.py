@@ -212,11 +212,12 @@ class dictionary_object2D_init(dictionary_object2D):
         #self.R = tf.Variable(initial_value = self.computeR(self.D),trainable=False)
         #return transf.fft2d_inner(fftSz)(self.D)
         noc = D.shape[-2]
-        self.divide_by_R = Coef_Divide_By_R(Dnormalized,noc,name=name + 'div_by_R',dtype=self.dtype)
+        self.divide_by_R = self.get_divide_by_R(Dnormalized,noc,name=name + 'div_by_R',dtype = self.dtype)
         with tf.name_scope(self.name):
             self.DbeforeApprox = tf.Variable(initial_value=self.divide_by_R.D,trainable=False,name='D_before_approx')
         return self.FFT(self.divide_by_R.D)
-
+    def get_divide_by_R(self,Dnormalized,noc,name,dtype)
+        return Coef_Divide_By_R(Dnormalized,noc,name=name,dtype=dtype)
 
 
 class dictionary_object2D_full(dictionary_object2D):
@@ -429,7 +430,6 @@ class DhMul(tf.keras.layers.Layer):
     def freezeD(self, inputs):
         Df = tf.complex(self.Dfreal,self.Dfimag)
         return tf.matmul(a=tf.stop_gradient(Df),b=inputs,adjoint_a=True)
-
 
 def get_lowrank_approx(A,*args,**kwargs):
     U,s,V = randomized_svd(A,*args,**kwargs)
@@ -664,13 +664,88 @@ def computeR(D,noc):
 
 
 class Coef_Divide_By_R(tf.keras.layers.Layer):
-    def __init__(self,D,noc,*args,**kwargs):
+    def __init__(self,D,noc,trainableD=False,*args,**kwargs):
         super().__init__(*args,**kwargs)
         with tf.name_scope(self.name):
-            self.D = tf.Variable(initial_value = D,trainable=False,name='D')
+            self.D = tf.Variable(initial_value = D,trainable=trainableD,name='D')
             self.R = tf.Variable(initial_value = computeR(D,noc),trainable=False,name='R')
+            if trainableD:
+                self.Dprev = tf.Variable(initial_value = D,trainable=False,name='Dprev')
     def call(self,inputs):
         R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
         return inputs/R
     def get_dict(self):
         return tf.reshape(self.D,self.D.shape[1:])
+
+
+
+class MulD_Sp(tf.keras.layers.Layer):
+    def __init__(self,D,*args,**kwargs):
+        self.D = D
+        self.noc = D.shape[2]
+        self.nof = D.shape[3]
+        super().__init__(*args,**kwargs)
+    def call(self,inputs):
+        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
+        return tf.nn.conv2d_transpose(input = x,filters = self.D,output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
+    def freeze(self,inputs):
+        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
+        return tf.nn.conv2d_transpose(input = x,filters = tf.stop_gradient(self.D),output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
+    def get_config(self):
+        config_dict = {'noc': self.noc,
+                       'nof': self.nof}
+        return config_dict
+
+class MulDT_Sp(tf.keras.layers.Layer):
+    def __init__(self,D,*args,**kwargs):
+        self.D = D
+        super().__init__(*args,**kwargs)
+    def call(self,inputs):
+        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
+        return tf.nn.conv2d(input = x,filters = self.D,strides = 1,padding='SAME',dilations=1)
+    def freeze(self,inputs):
+        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
+        return tf.nn.conv2d(input = x,filters = tf.stop_gradients(self.D),strides = 1,padding='SAME',dilations=1)
+
+
+class dictionary_object_init_sp(dictionary_object2D_init)
+    def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-15,*args,**kwargs):
+        super().__init__(fftSz,D,rho,objname,n_components=3,cmplxdtype,epsilon,*args,**kwargs)
+        self.dtmul_sp = MulDT_Sp(D,dtype=cmplxdtype.real_dtype)
+        self.dmul_sp = MulD_Sp(D,dtype=cmplxdtype.real_dtype)
+    def get_divide_by_R(self,Dnormalized,noc,name,dtype)
+        return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=dtype)
+    def _dict_update_LR(self):
+        Dnew = self.get_constrained_D(tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)) + self.divide_by_R.D - self.divide_by_R.Dprev
+        DbeforeApprox = self.DbeforeApprox.assign(Dnew)
+        # compute low rank approximation of the update
+        theUpdate = Dnew - self.divide_by_R.Dprev
+        U,V,approx = stack_svd(theUpdate,5,n_components = self.n_components)
+ 
+        # Update Spatial-Domain Dictionary and Normalization Factor
+        Dprev = self.divide_by_R.Dprev.assign_add(approx)
+        D = self.divide_by_R.D.assign(Dprev)
+        R = self.divide_by_R.R.assign(computeR(Dprev,Dprev.shape[4]))
+        
+        # Compute DFT (The conjugate is necessary because F{A} = F{U}F{V}^T
+        Uf = tf.cast(U,tf.complex128)#util.complexNum(U)
+        Vf = tf.math.conj(self.FFT(tf.cast(V,tf.float64)))
+
+        # Update Decomposition and Frequency-Domain Dictionary
+        Df,L = self._update_decomposition_LR(Uf,Vf,self.dhmul.Dfprev,self.qinv.L)
+        return [Dprev,D,R,DbeforeApprox,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L]
+class dictionary_object_init_full_sp(dictionary_object2D_init_full):
+    def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-15,*args,**kwargs):
+        super().__init__(fftSz,D,rho,objname,n_components=3,cmplxdtype,epsilon,*args,**kwargs)
+        self.dtmul_sp = MulDT_Sp(D,dtype=cmplxdtype.real_dtype)
+        self.dmul_sp = MulD_Sp(D,dtype=cmplxdtype.real_dtype)
+    def get_divide_by_R(self,Dnormalized,noc,name,dtype)
+        return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=dtype)
+    def _dict_update_full(self):
+        Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
+        Dnew = self.get_constrained_D(Df) + self.divide_by_R.D - self.divide_by_R.Dprev
+        return self._dict_update_full_from_D(Dnew)
+    def _dict_update_full_from_D(self,Dnew):
+        output = super()._dict_update_full_from_D(Dnew)
+        Dprev = self.divide_by_R.Dprev.assign(Dnew)
+        return [Dprev,] + output

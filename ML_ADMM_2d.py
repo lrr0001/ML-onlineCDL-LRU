@@ -98,9 +98,9 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def build_dict_obj(self,fftSz,D,rho,n_components,cmplxdtype,layer):
         if layer == 0:
-            return fctr.dictionary_object2D_init_full(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components = n_components)
+            return fctr.dictionary_object2D_init_full_sp(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components = n_components)
         else:
-            return fctr.dictionary_object2D_init(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components=n_components)
+            return fctr.dictionary_object2D_init_sp(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components=n_components)
 
 
 
@@ -162,7 +162,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             u = self.ustep_trunc(u,Ax,By,negC,layer)
 
         x,Ax = self.xstep_trunc(y,u,By,negC,layer=0)
-        Dx = self.dictObj[0].dmul(x[0])
+        Dx = self.dictObj[0].dmul_sp(x[0])
         return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)),itstats)
 
     def get_b_shape(self,fftSz,M):
@@ -289,12 +289,12 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def representation_error(self,v,x,z):
         mu = self.updateZ_layer[0].mu
-        representation_sum = mu/2*self.reconstructionTerm_sp(v,self.dictObj[0].dmul(x))
+        representation_sum = mu/2*self.reconstructionTerm_sp(v,self.dictObj[0].dmul_sp(x))
         for ll in range(1,self.noL - 1):
             mu = self.updateZ_layer[ll].mu
-            representation_sum += mu/2*self.reconstructionTerm_sp(z[ll - 1],self.dictObj[ll].dmul(x[ll]))
+            representation_sum += mu/2*self.reconstructionTerm_sp(z[ll - 1],self.dictObj[ll].dmul_sp(x[ll]))
         mu = self.updateZ_lastlayer.mu
-        representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 1],self.dictObj[self.noL].dmul(x[self.noL]))
+        representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 1],self.dictObj[self.noL].dmul_sp(x[self.noL]))
         return representation_sum
 
     def coef_penalty(self,z)
@@ -331,7 +331,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             z_curr = z[0]
             mu = self.updateZ_lastlayer.mu
         #tf.print('first mu: ',mu)
-        Dx = self.dictObj[0].dmul.freezeD(z_curr)
+        Dx = self.dictObj[0].dmul_sp.freezeD(z_curr)
         reconErr = (mu/2)*self.reconstructionTerm_sp(self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)),negC)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
@@ -340,17 +340,17 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             else:
                 mu = self.updateZ_lastlayer.mu
                 z_curr = z[layer]
-            reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul.freezeD(z_curr),layer)
+            reconErr += (mu/2)*self.reconstructionTerm(z[layer - 1],self.dictObj[layer].dmul_sp.freezeD(z_curr),layer)
         return reconErr
 
     # Low-level Initialization Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
 
     def xinit(self,xprev,layer):
         if layer == 0:
-            Dhx = self.dictObj[layer].dhmul.freezeD(xprev)
+            Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev)
         else:
             Rprev = util.rotate_dims_left(self.dictObj[layer - 1].divide_by_R.R,5) # Fix this later, can be implemented more efficiently
-            Dhx = self.dictObj[layer].dhmul.freezeD(xprev*Rprev)
+            Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev*Rprev)
         Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].divide_by_R.R),5) # Fix this later, can be implemented more efficiently
         return Dhx/Rsquared
 
@@ -389,9 +389,9 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def updateV(self,x_0,eta,negC,frozen=True):
         if frozen:
-            Dx = self.dictObj[0].dmul.freezeD(x_0)
+            Dx = self.dictObj[0].dmul_sp.freezeD(x_0)
         else:
-            Dx = self.dictObj[0].dmul(x_0)
+            Dx = self.dictObj[0].dmul_sp(x_0)
         Bzero = self.updateBzero((tf.squeeze(Dx,axis = -1),eta,negC))        
         return (util.addDim(self.cropAndMerge.merge((Bzero,Dx))),Bzero)
 
@@ -401,9 +401,9 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         if self.strides[layer] == 2:
             return self.updateZ_downsample(x_nextlayer,Ax,gamma_scaled,layer,frozen)
         if frozen:
-            Dx = self.dictObj[layer + 1].dmul.freezeD(x_nextlayer)
+            Dx = self.dictObj[layer + 1].dmul_sp.freezeD(x_nextlayer)
         else:
-            Dx = self.dictObj[layer + 1].dmul(x_nextlayer)
+            Dx = self.dictObj[layer + 1].dmul_sp(x_nextlayer)
         #z = self.updateZ_layer[layer]((self.IFFT[layer](Dx),self.IFFT[layer](Ax_relaxed),self.IFFT[layer](gamma_scaled)))
         z = self.updateZ_layer[layer]((Dx,Ax - gamma_scaled))
         # Changed this to switch from frequency to spatial
@@ -492,10 +492,10 @@ class GetNextIterX(tf.keras.layers.Layer):
         self.IFFT = IFFT
     def call(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        return self.IFFT(self.dictObj.freezeD(self.FFT(self.dictObj.dhmul.freezeD(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))))
+        return self.IFFT(self.dictObj.freezeD(self.FFT(self.dictObj.dtmul_sp.freezeD(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))))
     def thawD(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        return self.IFFT(self.dictObj(self.FFT(self.dictObj.dhmul(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))))
+        return self.IFFT(self.dictObj(self.FFT(self.dictObj.dtmul_sp(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))))
     def get_config(self):
         return {'rho': self.rho}
 
