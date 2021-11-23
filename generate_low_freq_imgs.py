@@ -9,9 +9,10 @@ alpha = 1.5
 noi = 20
 lmbda = 0.1
 dtype = 'float64'
+lmbda_t = 1.0
 
-datasetname = 'BSDS500/'
-#datasetname = 'simpleTest/'
+#datasetname = 'BSDS500/'
+datasetname = 'simpleTest/'
 
 # Obtain quantization matrices from chosen quality factor
 import PIL
@@ -42,8 +43,8 @@ Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype = dtype),tf.cast(0.,dtype= dty
 dataPath = 'data/original/' + datasetname
 filelist = os.listdir(dataPath)
 savePath = 'data/scratchwork/' + datasetname + '/whole/'
-#for datatype in ['train/','val/']:
-for datatype in ['train/','val/','test/']:
+for datatype in ['val/',]:
+#for datatype in ['train/','val/','test/']:
     filelist = os.listdir(dataPath + datatype)
     for filename in filelist:
         loadedImg = PIL.Image.open(dataPath + datatype + filename)
@@ -66,6 +67,38 @@ for datatype in ['train/','val/','test/']:
 
         pkl.dump({'lowpass': tf.reshape(lowpass,lowpass.shape[1:]),'highpass': tf.reshape(compressedImg - lowpass,lowpass.shape[1:]), 'raw': tf.reshape(raw,raw.shape[1:])},fid)
         fid.close()
+
+
+# Code added to train on raw images.
+smooth_jpeg1 = jrf.XUpdate_SmoothJPEG(lmbda_t,fftSz1,tf.reshape([1.,-1.],(1,2,1,1)),tf.reshape([1.,-1.],(1,1,2,1)),dtype=dtype)
+smooth_jpeg2 = jrf.XUpdate_SmoothJPEG(lmbda_t,fftSz2,tf.reshape([1.,-1.],(1,2,1,1)),tf.reshape([1.,-1.],(1,1,2,1)),dtype=dtype)
+
+for datatype in ['train/',]:
+    filelist = os.listdir(dataPath + datatype)
+    for filename in filelist:
+        loadedImg = PIL.Image.open(dataPath + datatype + filename)
+        loadedImg = np.asarray(loadedImg).astype(dtype)/255.
+        loadedImgShape = loadedImg.shape
+        loadedImg = loadedImg[slice(0,loadedImgShape[0] - (loadedImgShape[0] % 8)),slice(0,loadedImgShape[1] - (loadedImgShape[1] % 8)),slice(None)]
+        raw = tf.reshape(loadedImg,(1,) + loadedImg.shape)
+        if loadedImgShape[0] - (loadedImgShape[0] % 8) == 480 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 320:
+           # compressedImg = smooth_jpeg1.Wt(jrf.threeChannelQuantize(smooth_jpeg1.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
+            lowpass = smooth_jpeg1(raw)
+            compressedImg = raw
+        elif loadedImgShape[0] - (loadedImgShape[0] % 8) == 320 and loadedImgShape[1] - (loadedImgShape[1] % 8) == 480:
+            #compressedImg = smooth_jpeg2.Wt(jrf.threeChannelQuantize(smooth_jpeg2.W(tf.reshape(loadedImg,(1,) + loadedImg.shape)),qY,qUV,Yoffset))
+            lowpass = smooth_jpeg2(raw)
+            compressedImg = raw
+        else:
+            raise ValueError('Unexpected Shape!')
+
+        # Need to save lowpass, highpass and raw into pickle file
+        fid = open(savePath + datatype + filename + '.pckl','wb')
+
+        pkl.dump({'lowpass': tf.reshape(lowpass,lowpass.shape[1:]),'highpass': tf.reshape(compressedImg - lowpass,lowpass.shape[1:]), 'raw': tf.reshape(raw,raw.shape[1:])},fid)
+        fid.close()
+
+
 
 
 fid = open('data/processed/' + datasetname + 'param.pckl','wb')
