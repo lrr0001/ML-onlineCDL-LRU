@@ -411,7 +411,7 @@ class XUpdate_SmoothJPEG(tf.keras.layers.Layer):
     def get_config(self):
         return {'lmbda': self.lmdba}
     def call(self,inputs):
-        A = 1.0 + self.lmbda*(tf.math.conj(self.fltr1)*self.fltr1 + tf.math.conj(self.fltr2)*self.fltr2)
+        A = tf.cast(1.0,'complex128') + self.lmbda*(tf.math.conj(self.fltr1)*self.fltr1 + tf.math.conj(self.fltr2)*self.fltr2)
         return self.ifft(self.fft(inputs)/A)
     def last_call(self,inputs):
         A = 1.0 + 3*self.lmbda*(tf.math.conj(self.fltr1)*self.fltr1 + tf.math.conj(self.fltr2)*self.fltr2)
@@ -588,8 +588,8 @@ class I_dont_know_what_to_call_this:
         return (self.b*(tr + bl) + self.a*br)/(self.a + 2*self.b)
 
 def row_fun(x,a,b,real_dtype):
-    sig_2_blks = tf.keras.layers.Reshape((x.shape[1]/8,8,x.shape[2]/8,8) + x.shape[3:]),dtype=real_dtype)
-    blks_2_sig = tf.keras.layers.Reshape((x.shape[1:],dtype=real_dtype)
+    sig_2_blks = tf.keras.layers.Reshape((x.shape[1]/8,8,x.shape[2]/8,8) + x.shape[3:],dtype=real_dtype)
+    blks_2_sig = tf.keras.layers.Reshape(x.shape[1:],dtype=real_dtype)
 
     rows_done = my_fun(sig_2_blks(x),a,b,axis = 2,blkSz=8,dtype=real_dtype)
 
