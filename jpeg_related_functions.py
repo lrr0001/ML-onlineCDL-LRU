@@ -566,3 +566,58 @@ class ZUpdate_JPEGY_Implicit(tf.keras.layers.Layer):
         delta_z = self.enforce_jpeg_constraint((z,negC)) # for precision
         z = z + delta_z
         return z
+
+
+
+
+class I_dont_know_what_to_call_this:
+    def __init__(self,a,b):
+        self.a = a
+        self.b = b
+    def get_TL(self,tl,tr,bl,br):
+        ''' When blurring across 4 pixels, this computes the top left result. '''
+        return ((self.a**2 + 4*self.a*self.b + 2*self.b**2)*tl/(self.a + 2*self.b) + self.b*tr + self.b*bl + 2*self.b**2*br/(self.a + 2*self.b))/(self.a + 4*self.b)
+    def get_TR(self,tl,tr,bl,br):
+        ''' Computes the top right result. Assumes TL has already been computed. '''
+        return (self.b*(self.a + 2*self.b)**2*tl + self.a*(self.a + self.b)*(self.a + 3*self.b)*tr + self.a*self.b**2*bl + self.a*self.b*(self.a + 2*self.b)*br)/(self.a**3 + 6*self.a**2*self.b + 10*self.a*self.b**2 + 4*self.b**3)
+    def get_BL(self,tl,tr,bl,br):
+        ''' Computes the bottom left result.  Assumes TL and TR have already been computed. '''
+        return (self.b*(self.a + 2*self.b)*tl + self.b**2*tr + self.a*(self.a + 2*self.b)*bl + self.a*self.b*br)/((self.a + self.b)*(self.a + 3*self.b))
+    def get_BR(self,tl,tr,bl,br):
+        ''' Computes the bottom right result. Assumes TL, TR, and BL have all already been computed. '''
+        return (self.b*(tr + bl) + self.a*br)/(self.a + 2*self.b)
+
+def row_fun(x,a,b,real_dtype):
+    sig_2_blks = tf.keras.layers.Reshape((x.shape[1]/8,8,x.shape[2]/8,8) + x.shape[3:]),dtype=real_dtype)
+    blks_2_sig = tf.keras.layers.Reshape((x.shape[1:],dtype=real_dtype)
+
+    rows_done = my_fun(sig_2_blks(x),a,b,axis = 2,blkSz=8,dtype=real_dtype)
+
+    cols_done = my_fun(rows_done,a,b,axis = 4,blkSz = 8,dtype = real_dtype)
+
+    return blks_2_sig(cols_done)
+
+def my_fun(blks,a,b,axis,blkSz,dtype):
+    slices = [slice(None),]*(axis - 1) + [slice(0,-1),slice(blkSz - 1,None)]
+    xsect1 = blks[slices[:]]
+    slices = [slice(None),]*(axis - 1) + [slice(1,None),slice(0,1)]
+    xsect2 = blks[slices[:]]
+
+    newXsect = ((a + b)*xsect1 + b*xsect2)/(a + 2*b)
+    newXsect = (b*xsect1 + (a + b)*xsect2)/(a + 2*b)
+
+    temp1 = tf.one_hot(indices = (blkSz - 1)*tf.ones((1,)*(len(blks.shape) - 1),dtype= 'int32'), depth = blkSz, on_value = 1., off_value = 0.,axis = axis, dtype = dtype)
+
+    slices = [slices(None),]*(axis - 1) + [slice(0,-1),slice(None)]
+    withXsect1 = (tf.cast(1.,dtype=dtype) - temp1)*blks[slices[:]] + temp1*newXsect1
+    slices = [slices(None),]*(axis - 1) + [slice(-1,None),slice(None)]
+    withXsect1 = tf.concat([withXsect1,blks[slices[:]]],axis = axis)
+
+    temp2 = tf.one_hot(indices = tf.zeros((1,)*(len(blks.shape) - 1),dtype='int32'), depth = blkSz, on_value = 1., off_value = 0., axis = axis, dtype = dtype)
+
+    slices = [slice(None),]*(axis - 1) + [slice(1,None),slice(0,1)]
+    withXsect2 = (tf.cast(1.,dtype= dtype) - temp2)*withXsect1[slices[:]] + temp2*newXect2
+    slices = [slice(None),]*(axis - 1) + [slice(0,1),slice(None)]
+    withXsect2 = tf.concat([withXsect1[slices[:]],withXsect2],axis = axis)
+
+    return withXsect2
