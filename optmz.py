@@ -74,7 +74,7 @@ class ADMM_Relaxed(ADMM):
         self.rho = rho
         self.alpha = alpha
         self.noi = noi
-        tf.Keras.layers.Layer.__init__(*args,**kwargs)
+        tf.keras.layers.Layer.__init__(self,*args,**kwargs)
 
     # iterative steps:
     def relax(self,u,Ax,By,negC):

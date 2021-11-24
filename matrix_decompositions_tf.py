@@ -216,7 +216,7 @@ class dictionary_object2D_init(dictionary_object2D):
         with tf.name_scope(self.name):
             self.DbeforeApprox = tf.Variable(initial_value=self.divide_by_R.D,trainable=False,name='D_before_approx')
         return self.FFT(self.divide_by_R.D)
-    def get_divide_by_R(self,Dnormalized,noc,name,dtype)
+    def get_divide_by_R(self,Dnormalized,noc,name,dtype):
         return Coef_Divide_By_R(Dnormalized,noc,name=name,dtype=dtype)
 
 
@@ -680,40 +680,44 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
 
 
 class MulD_Sp(tf.keras.layers.Layer):
-    def __init__(self,D,*args,**kwargs):
-        self.D = D
-        self.noc = D.shape[2]
-        self.nof = D.shape[3]
+    def __init__(self,divide_by_R,*args,**kwargs):
+        self.divide_by_R = divide_by_R
+        self.noc = divide_by_R.D.shape[2]
+        self.nof = divide_by_R.D.shape[3]
         super().__init__(*args,**kwargs)
     def call(self,inputs):
         x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        return tf.nn.conv2d_transpose(input = x,filters = self.D,output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
-    def freeze(self,inputs):
+        return tf.nn.conv2d_transpose(input = x,filters = self.divide_by_R.get_dict(),output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
+    def freezeD(self,inputs):
+        print(inputs.shape)
         x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        return tf.nn.conv2d_transpose(input = x,filters = tf.stop_gradient(self.D),output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
+        return tf.nn.conv2d_transpose(input = x,filters = tf.stop_gradient(self.divide_by_R.get_dict()),output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
     def get_config(self):
         config_dict = {'noc': self.noc,
                        'nof': self.nof}
         return config_dict
 
 class MulDT_Sp(tf.keras.layers.Layer):
-    def __init__(self,D,*args,**kwargs):
-        self.D = D
+    def __init__(self,divide_by_R,*args,**kwargs):
+        self.divide_by_R = divide_by_R
         super().__init__(*args,**kwargs)
     def call(self,inputs):
         x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        return tf.nn.conv2d(input = x,filters = self.D,strides = 1,padding='SAME',dilations=1)
-    def freeze(self,inputs):
+        outputs = tf.nn.conv2d(input = x,filters = self.divide_by_R.get_dict(),strides = 1,padding='SAME',dilations=1)
+        return tf.reshape(outputs,inputs.shape[:-1] + outputs.shape[-1:])
+    def freezeD(self,inputs):
+        print(inputs.shape)
         x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        return tf.nn.conv2d(input = x,filters = tf.stop_gradients(self.D),strides = 1,padding='SAME',dilations=1)
+        outputs = tf.nn.conv2d(input = x,filters = tf.stop_gradient(self.divide_by_R.get_dict()),strides = 1,padding='SAME',dilations=1)
+        return tf.reshape(outputs,inputs.shape[:-1] + outputs.shape[-1:])
 
 
-class dictionary_object_init_sp(dictionary_object2D_init)
+class dictionary_object_init_sp(dictionary_object2D_init):
     def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-15,*args,**kwargs):
-        super().__init__(fftSz,D,rho,objname,n_components=3,cmplxdtype,epsilon,*args,**kwargs)
-        self.dtmul_sp = MulDT_Sp(D,dtype=cmplxdtype.real_dtype)
-        self.dmul_sp = MulD_Sp(D,dtype=cmplxdtype.real_dtype)
-    def get_divide_by_R(self,Dnormalized,noc,name,dtype)
+        super().__init__(fftSz,D,rho,objname,n_components,cmplxdtype,epsilon,*args,**kwargs)
+        self.dtmul_sp = MulDT_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
+        self.dmul_sp = MulD_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
+    def get_divide_by_R(self,Dnormalized,noc,name,dtype):
         return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=dtype)
     def _dict_update_LR(self):
         Dnew = self.get_constrained_D(tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)) + self.divide_by_R.D - self.divide_by_R.Dprev
@@ -736,10 +740,10 @@ class dictionary_object_init_sp(dictionary_object2D_init)
         return [Dprev,D,R,DbeforeApprox,self.dhmul.Dfreal.assign(tf.math.real(Df)),self.dhmul.Dfimag.assign(tf.math.imag(Df)),L]
 class dictionary_object_init_full_sp(dictionary_object2D_init_full):
     def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-15,*args,**kwargs):
-        super().__init__(fftSz,D,rho,objname,n_components=3,cmplxdtype,epsilon,*args,**kwargs)
-        self.dtmul_sp = MulDT_Sp(D,dtype=cmplxdtype.real_dtype)
-        self.dmul_sp = MulD_Sp(D,dtype=cmplxdtype.real_dtype)
-    def get_divide_by_R(self,Dnormalized,noc,name,dtype)
+        super().__init__(fftSz,D,rho,objname,n_components,cmplxdtype,epsilon,*args,**kwargs)
+        self.dtmul_sp = MulDT_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
+        self.dmul_sp = MulD_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
+    def get_divide_by_R(self,Dnormalized,noc,name,dtype):
         return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=dtype)
     def _dict_update_full(self):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)

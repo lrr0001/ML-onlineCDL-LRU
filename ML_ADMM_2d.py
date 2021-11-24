@@ -1,3 +1,11 @@
+import tensorflow as tf
+import matrix_decompositions_tf as fctr
+import optmz
+import jpeg_related_functions as jrf
+import transforms as transf
+import util
+import numpy as np
+import post_process_grad as ppg
 class MultiLayerCSC(optmz.ADMM_Relaxed):
     '''
     x: list
@@ -23,7 +31,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
     def __init__(self,rho,alpha_init,mu_init,b_init,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
         rho,mu_init = self.init_param(rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
         self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),noL,fftSz,strides,D,n_components,cmplxdtype)
-        self.initializeInputHandlingLayers(rho,cropAndMerge)
+        self.initializeInputHandlingLayers()
     def init_param(self,rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs):
         self.longitstat = longitstat
         self.cmplxdtype = cmplxdtype
@@ -35,7 +43,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         self.cropAndMerge = cropAndMerge
         self.initialize_alpha(alpha_init)
         return rho,mu_init
-    def initialize_alpa(self,alpha):
+    def initialize_alpha(self,alpha):
         '''This overwrites the self.alpha from the initialization of ADMM_Relaxed.'''
         self.alpha = tf.Variable(initial_value=alpha,trainable=False,name = 'alpha',dtype=tf.as_dtype(self.cmplxdtype).real_dtype)
     def get_config(self):
@@ -98,9 +106,9 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def build_dict_obj(self,fftSz,D,rho,n_components,cmplxdtype,layer):
         if layer == 0:
-            return fctr.dictionary_object2D_init_full_sp(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components = n_components)
+            return fctr.dictionary_object_init_full_sp(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components = n_components)
         else:
-            return fctr.dictionary_object2D_init_sp(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components=n_components)
+            return fctr.dictionary_object_init_sp(fftSz=fftSz,D = tf.convert_to_tensor(D),rho=tf.cast(rho,dtype=cmplxdtype),objname='dict_layer' + str(layer),n_components=n_components)
 
 
 
@@ -163,7 +171,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
         x,Ax = self.xstep_trunc(y,u,By,negC,layer=0)
         Dx = self.dictObj[0].dmul_sp(x[0])
-        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)),itstats)
+        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-2)),itstats)
 
     def get_b_shape(self,fftSz,M):
         #return [1,fftSz[0],fftSz[1],M,1,]
@@ -177,13 +185,14 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
     # CHANGED FOR RAW TRAINING
     def get_negative_C(self,s):
         s_HF,s_LF,compressed = s
-        return self.cropAndMerge.crop(s_HF)
+        return (None,self.cropAndMerge.crop(s_HF))
 
     def init_x(self,s,negC):
-    '''Initializes x for all layers. Ax includes an empty slot up front, anticipating its use later. While it would make more sense to add the variable to x as well, naming gets messy, so I'll leave that be. My plan for the added variable has Axzero = -xzero, so storing it with the rest of x is unnecessary, since its value can be accessed from By in the x and u updates. The second element of tuple Ax would more accurately be the negative of what it is in this code, but there's no reason to store the negative version of the same variable. Instead, the equations flip the sign whenever Ax[1] is accessed.'''
+        '''Initializes x for all layers. Ax includes an empty slot up front, anticipating its use later. While it would make more sense to add the variable to x as well, naming gets messy, so I'll leave that be. My plan for the added variable has Axzero = -xzero, so storing it with the rest of x is unnecessary, since its value can be accessed from By in the x and u updates. The second element of tuple Ax would more accurately be the negative of what it is in this code, but there's no reason to store the negative version of the same variable. Instead, the equations flip the sign whenever Ax[1] is accessed.'''
         s_HF,temp1,temp2 = s
-        s_crop = negC
-        x.append(self.xinit(util.addDim(s_HF),layer = 0))
+        temp,s_crop = negC
+        x = []
+        x.append(self.xinit(tf.expand_dims(s_HF,axis = -2),layer = 0))
         for ii in range(1,self.noL):
             if self.strides[ii - 1] == 2:
                 x.append(self.xinit(util.freq_downsample(x[ii - 1]),layer=ii))
@@ -195,7 +204,8 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def init_y(self,s,x,Ax,negC):
         Azero,Ax_layers = Ax
-        v,Bv = self.vinit(s,x[0],negC)
+        temp,s_crop = negC
+        v,Bv = self.vinit(s,x[0],s_crop)
         z = []
         for ii in range(self.noL - 1):
             z.append(util.rotate_dims_left(self.dictObj[ii].divide_by_R.R,5)*x[ii])
@@ -209,10 +219,11 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
     def init_u(self,s,Ax,By,negC):
         Azero,Ax_layers = Ax
         Bzero,Bz = By
+        temp,s_crop = negC
         gamma = []
         for ii in range(self.noL):
             gamma.append(self.gammainit(Ax_layers[ii],Bz[ii],ii))
-        eta = self.etainit(Azero,Bzero,negC)
+        eta = self.etainit(Azero,Bzero,s_crop)
         return (eta,gamma)
 
 
@@ -225,14 +236,15 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         return self.relax_trunc(u,Ax,By,negC,layer=self.noL)
 
     def ystep(self,x,uhalf,Ax,negC):
-    ''' This code computes the updates for z, v, and Bzero. The other step functions use a truncated step function. However, while it is good practice to avoid code redundancy, here the last layer is distinct from ystep_trunc. ystep_trunc also does not freeze the dictionary weights and does not use updateZlast. If-else logic could resolve these distinctions, but I find it clearer to leave these as two separate functions.'''
+        ''' This code computes the updates for z, v, and Bzero. The other step functions use a truncated step function. However, while it is good practice to avoid code redundancy, here the last layer is distinct from ystep_trunc. ystep_trunc also does not freeze the dictionary weights and does not use updateZlast. If-else logic could resolve these distinctions, but I find it clearer to leave these as two separate functions.'''
         eta,gamma = uhalf
         Azero,Ax_layers = Ax
+        temp,s_crop = negC
         z = []
         for ii in range(self.noL - 1):
             z.append(self.updateZ(x_nextlayer=x[ii + 1],Ax=Ax_layers[ii],gamma_scaled=gamma[ii],layer=ii))
         z.append(self.updateZ_last(Ax=Ax_layers[self.noL - 1],gamma_scaled=gamma[self.noL - 1]))
-        v,Bzero = self.updateV(x[0],eta,negC)
+        v,Bzero = self.updateV(x[0],eta,s_crop)
         y = (v,z)
         By = (Bzero,z)
         return y,By
@@ -258,11 +270,12 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
     def ystep_trunc(self,x,u,Ax,negC,layer,frozen=True):
         eta,gamma = u
         Azero,Ax_layers = Ax
+        temp,s_crop = negC
         z = []
         for ii in range(layer - 1):
             z.append(self.updateZ(x_nextlayer=x[ii + 1],Ax=Ax_layers[ii],gamma_scaled=gamma[ii],layer=ii))
         z.append(self.updateZ(x_nextlayer=x[layer],Ax=Ax_layers[layer - 1],gamma_scaled=gamma[layer - 1],layer=layer - 1,frozen=frozen))
-        v,Bzero = self.updateV(x[0],eta,negC)
+        v,Bzero = self.updateV(x[0],eta,s_crop)
         y = (v,z)
         By = (Bzero,z)
         return y,By
@@ -270,15 +283,17 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
     def ustep_trunc(self,u,Ax,By,negC,layer,relax_bool=False):
         eta,gamma = u
         Azero,Ax_layers = Ax
+        temp,s_crop = negC
         Bv,z = By
         for ii in range(layer):
             gamma[ii] = self.updateGamma(gamma[ii],z[ii],Ax_layers[ii],ii,relax_bool)
-        eta = self.updateEta(eta,Azero,Bv,negC,relax_bool)
+        eta = self.updateEta(eta,Azero,Bv,s_crop,relax_bool)
         return (eta,gamma) 
 
     def get_obj(self,y,negC):
         v,z = y
-        return self.data_fid_z(y,negC) + self.coef_penalty(z)
+        temp,s_crop = negC
+        return self.data_fid_z(y,s_crop) + self.coef_penalty(z)
 
     def evaluateLagrangian(self,s,x,y,u,Ax,By,negC):
         s_HP,s_LP,compressed = s
@@ -297,7 +312,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 1],self.dictObj[self.noL].dmul_sp(x[self.noL]))
         return representation_sum
 
-    def coef_penalty(self,z)
+    def coef_penalty(self,z):
         penalty_sum = self.penaltyTerm(z[0],0)
         for ll in range(1,self.noL - 1):
             penalty_sum += self.penaltyTerm(z[ll],ll)
@@ -305,7 +320,8 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         penalty_sum += self.penaltyTerm(z[self.noL - 1]*R,self.noL - 1)
 
     def cnstrPenalty(self,Azero,Bzero,eta,Ax,By,gamma,negC):
-        cnstr_penalty_sum = (self.rho/2)*self.reconstructionTerm_sp(Azero + eta,negC)
+        temp,s_crop = negC
+        cnstr_penalty_sum = (self.rho/2)*self.reconstructionTerm_sp(Azero + eta,s_crop)
         for ii in range(self.noL - 1):
             R = tf.reshape(self.dictObj[ll].divide_by_R.R,shape=(1,1,1,self.dictObj[ll].divide_by_R.R.shape[4],1))
             mu = self.updateZ_layer[ll].mu
@@ -332,7 +348,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             mu = self.updateZ_lastlayer.mu
         #tf.print('first mu: ',mu)
         Dx = self.dictObj[0].dmul_sp.freezeD(z_curr)
-        reconErr = (mu/2)*self.reconstructionTerm_sp(self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)),negC)
+        reconErr = (mu/2)*self.reconstructionTerm_sp(self.cropAndMerge.crop(tf.squeeze(Dx,axis=-2)),negC)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 z_curr = self.dictObj[layer].divide_by_R(z[layer])
@@ -347,17 +363,20 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def xinit(self,xprev,layer):
         if layer == 0:
+            print('xprev_shape: ',xprev.shape)
             Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev)
         else:
             Rprev = util.rotate_dims_left(self.dictObj[layer - 1].divide_by_R.R,5) # Fix this later, can be implemented more efficiently
             Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev*Rprev)
-        Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].divide_by_R.R),5) # Fix this later, can be implemented more efficiently
+        #Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].divide_by_R.R),5) # Fix this later, can be implemented more efficiently
+        Rsquared = tf.math.square(self.dictObj[layer].divide_by_R.R)
+        print('Rsquared_shape: ',Rsquared.shape)
         return Dhx/Rsquared
 
 
-    def vinit(self,s,x_0,negC):
+    def vinit(self,s,x_0,s_crop):
         s_HP,s_LP,compressed = s
-        return (s_HP,negC)
+        return (tf.expand_dims(s_HP,axis=-2),s_crop)
 
     #def zinit(self,xnext,Ax,layer):     
     #    return self.updateZ(xnext,Ax,tf.reshape(tf.cast(0.,tf.as_dtype(self.cmplxdtype.real_dtype)),(1,1,1,1,1)),layer)
@@ -366,10 +385,10 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
 
     def gammainit(self,Ax,Bz,layer):
-        return self.updateGamma(tf.cast(0.,tf.as_dtype(self.cmplxdtype.real_dtype)),Bz,Ax,layer)
+        return self.updateGamma(tf.cast(0.,tf.as_dtype(self.cmplxdtype.real_dtype)),Bz,Ax,layer,relax_bool=False)
 
-    def etainit(self,Azero,Bzero,negC):
-        return tf.zeros(shape = negC.shape,dtype = self.cmplxdtype.real_dtype)
+    def etainit(self,Azero,Bzero,s_crop):
+        return tf.zeros(shape = s_crop.shape,dtype = self.cmplxdtype.real_dtype)
 
 
     # Low-level Update Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
@@ -387,13 +406,13 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
                 return self.updateX_layer[layer].thawD((z_prevlayer,self.dictObj[layer].divide_by_R(z),gamma_scaled))
 
 
-    def updateV(self,x_0,eta,negC,frozen=True):
+    def updateV(self,x_0,eta,s_crop,frozen=True):
         if frozen:
             Dx = self.dictObj[0].dmul_sp.freezeD(x_0)
         else:
             Dx = self.dictObj[0].dmul_sp(x_0)
-        Bzero = self.updateBzero((tf.squeeze(Dx,axis = -1),eta,negC))        
-        return (util.addDim(self.cropAndMerge.merge((Bzero,Dx))),Bzero)
+        Bzero = self.updateBzero((tf.squeeze(Dx,axis = -2),eta,s_crop))        
+        return (tf.expand_dims(self.cropAndMerge.merge((Bzero,Dx)),axis=-2),Bzero)
 
 
     def updateZ(self,x_nextlayer,Ax,gamma_scaled,layer,frozen=True):
@@ -425,11 +444,11 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         else:
             return self.updateGamma_layer((gamma_scaled,z_over_R,x))
 
-    def updateEta(self,eta_over_rho,Azero,Bv,negC,relax_bool):
+    def updateEta(self,eta_over_rho,Azero,Bv,s_crop,relax_bool):
         if relax_bool:
-            return self.updateeta.halfstep((eta_over_rho,Bv,negC))
+            return self.updateeta.halfstep((eta_over_rho,Bv,s_crop))
         else:
-            return self.updateeta((eta_over_rho,Bv,negC))
+            return self.updateeta((eta_over_rho,Bv,s_crop))
 
 
     def reconstructionTerm(self,z,Dx,layer):
@@ -492,10 +511,26 @@ class GetNextIterX(tf.keras.layers.Layer):
         self.IFFT = IFFT
     def call(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        return self.IFFT(self.dictObj.freezeD(self.FFT(self.dictObj.dtmul_sp.freezeD(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))))
+        print('z_prevlayer_shape: ',z_prevlayer.shape)
+        print('z_over_R_shape: ',z_over_R.shape)
+        print('gamma_scaled: ',gamma_scaled.shape)
+        preQinv = self.FFT(self.dictObj.dtmul_sp.freezeD(z_prevlayer) + self.rho*z_over_R + gamma_scaled)
+        preQinv = tf.expand_dims(tf.squeeze(preQinv,axis = -2),axis = -1)
+        
+        postQinv = self.IFFT(self.dictObj.freezeD(preQinv))
+        outputs = tf.expand_dims(tf.squeeze(postQinv,axis = -1),axis = -2)
+        return outputs
     def thawD(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        return self.IFFT(self.dictObj(self.FFT(self.dictObj.dtmul_sp(z_prevlayer) + self.rho*(z_over_R + gamma_scaled))))
+        print('z_prevlayer_shape: ',z_prevlayer.shape)
+        print('z_over_R_shape: ',z_over_R.shape)
+        print('gamma_scaled: ',gamma_scaled.shape)
+        preQinv = self.FFT(self.dictObj.dtmul_sp(z_prevlayer) + self.rho*z_over_R + gamma_scaled)
+        preQinv = tf.expand_dims(tf.squeeze(preQinv,axis = -2),axis = -1)
+        
+        postQinv = self.IFFT(self.dictObj(preQinv))
+        outputs = tf.expand_dims(tf.squeeze(postQinv,axis = -1),axis = -2)
+        return outputs
     def get_config(self):
         return {'rho': self.rho}
 
@@ -614,7 +649,7 @@ class UpdateEta(tf.keras.layers.Layer):
     def __init__(self,alpha,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.alpha = alpha
-    def call(self.inputs):
+    def call(self,inputs):
         eta_scaled,croppedv,negC = inputs
         return eta_scaled + croppedv - negC
     def halfstep(self,inputs):
@@ -631,3 +666,48 @@ class GetNextIterBZero(tf.keras.layers.Layer):
     def call(self,inputs):
         Dx_squeezed,eta,negC = inputs
         return (self.mu*self.cropAndMerge.crop(Dx_squeezed) + self.rho*(negC - eta))/(self.mu + self.rho)
+
+class CropPadObject:
+    def __init__(self,signalSz,strides,kernelSz,dtype):
+        self.dtype = dtype
+        padding = 0
+        for ii in range(len(kernelSz)):
+            stride_factor = 1
+            for jj in range(0,ii):
+                stride_factor = stride_factor*strides[jj]
+            padding = padding + stride_factor*(kernelSz[ii] - 1)
+        extra_padding = stride_factor - ((signalSz + padding) % stride_factor)
+        self.build_crop_and_merge(signalSz,padding + extra_padding)
+
+    def build_crop_and_merge(self,signal_sz,padding):
+        padding_top = (padding/2).astype('int') # don't worry: i'll fix it if it doesn't divide evenly
+        padding_bottom = (padding/2).astype('int')
+        for ii in range(padding.shape[0]):
+            if padding[ii] % 2 == 1:
+                padding_top[ii] = ((padding[ii] - 1)/2).astype('int')
+                padding_bottom[ii] = ((padding[ii] + 1)/2).astype('int')
+        self.paddingTuple = ((padding_top[0],padding_bottom[0]),(padding_top[1],padding_bottom[1]))
+        self.crop = tf.keras.layers.Cropping2D(self.paddingTuple,dtype=self.dtype)
+        pad = tf.keras.layers.ZeroPadding2D(padding = self.paddingTuple,dtype=self.dtype)
+        trues = tf.fill((1,signal_sz[0],signal_sz[1],1),1)
+        mask = tf.cast(pad(trues),'bool')
+        self.merge = Merge(pad,mask,dtype=self.dtype)
+    def get_fft_size(self,signalSz,strides):
+        fftSz = []
+        fftSz.append((signalSz[0] + self.paddingTuple[0][0] + self.paddingTuple[0][1],signalSz[1] + self.paddingTuple[1][0] + self.paddingTuple[1][1]))
+        ii = 0
+        for stride in strides:
+            fftSz.append((int(fftSz[ii][0]/stride),int(fftSz[ii][1]/stride)))
+            ii += 1
+        return fftSz
+
+class Merge(tf.keras.layers.Layer):
+    def __init__(self,pad,mask,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.pad = pad
+        self.mask = mask
+    def call(self,inputs):
+        x,y = inputs
+        return tf.where(self.mask,self.pad(x),y)
+    def get_config(self):
+        return {'mask': self.mask, 'pad': self.pad}
