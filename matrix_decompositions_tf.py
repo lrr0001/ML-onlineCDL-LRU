@@ -673,6 +673,7 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
                 self.Dprev = tf.Variable(initial_value = D,trainable=False,name='Dprev')
     def call(self,inputs):
         R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
+        print('R_shape: ',self.R.shape)
         return inputs/R
     def get_dict(self):
         return tf.reshape(self.D,self.D.shape[1:])
@@ -684,33 +685,70 @@ class MulD_Sp(tf.keras.layers.Layer):
         self.divide_by_R = divide_by_R
         self.noc = divide_by_R.D.shape[2]
         self.nof = divide_by_R.D.shape[3]
+        self.fltrSz = divide_by_R.D.shape[:2]
         super().__init__(*args,**kwargs)
     def call(self,inputs):
-        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        return tf.nn.conv2d_transpose(input = x,filters = self.divide_by_R.get_dict(),output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
+        x = tf.squeeze(inputs,axis = -2)
+        Dflipped = tf.reverse(self.divide_by_R.get_dict(),axis=(0,1))
+        fltrSz = Dflipped.shape[0:2]
+        xpad1 = tf.concat([x[slice(None),slice(-(fltrSz[0] - 1),None)],x],axis = 1)
+        xpad2 = tf.concat([xpad1[slice(None),slice(None),slice(-(fltrSz[1] - 1),None)],xpad1],axis = 2)
+        outputs =  tf.nn.conv2d_transpose(input = xpad2,filters = Dflipped,output_shape = x.shape[:-1] + (self.noc,),strides = 1,padding='VALID',dilations=1)
+        return tf.expand_dims(outputs,axis = -2)
     def freezeD(self,inputs):
-        print(inputs.shape)
-        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        return tf.nn.conv2d_transpose(input = x,filters = tf.stop_gradient(self.divide_by_R.get_dict()),output_shape = x.shape[:-1] + (self.noc,self.nof),strides = 1,padding='SAME',dilations=1)
+        x = tf.squeeze(inputs,axis = -2)
+        Dflipped = tf.reverse(self.divide_by_R.get_dict(),axis=(0,1))
+        fltrSz = Dflipped.shape[0:2]
+        xpad1 = tf.concat([x[slice(None),slice(-(fltrSz[0] - 1),None)],x],axis = 1)
+        xpad2 = tf.concat([xpad1[slice(None),slice(None),slice(-(fltrSz[1] - 1),None)],xpad1],axis = 2)
+        outputs =  tf.nn.conv2d_transpose(input = xpad2,filters = tf.stop_gradient(Dflipped),output_shape = x.shape[:-1] + (self.noc,),strides = 1,padding='VALID',dilations=1)
+        return tf.expand_dims(outputs,axis = -2)
     def get_config(self):
         config_dict = {'noc': self.noc,
-                       'nof': self.nof}
+                       'nof': self.nof,
+                       'fltrSz': self.fltrSz}
         return config_dict
 
 class MulDT_Sp(tf.keras.layers.Layer):
     def __init__(self,divide_by_R,*args,**kwargs):
         self.divide_by_R = divide_by_R
+        self.fltrSz = self.divide_by_R.D.shape[:2]
+        self.offset = [tf.cast((self.fltrSz[ii] - 1)/2,'int32') for ii in range(2)]
+        self.noc = self.divide_by_R.D.shape[-2]
+        self.nof = self.divide_by_R.D.shape[-1]
         super().__init__(*args,**kwargs)
     def call(self,inputs):
-        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        outputs = tf.nn.conv2d(input = x,filters = self.divide_by_R.get_dict(),strides = 1,padding='SAME',dilations=1)
-        return tf.reshape(outputs,inputs.shape[:-1] + outputs.shape[-1:])
-    def freezeD(self,inputs):
-        print(inputs.shape)
-        x = tf.reshape(inputs,inputs.shape[:-2] + (inputs.shape[-1],))
-        outputs = tf.nn.conv2d(input = x,filters = tf.stop_gradient(self.divide_by_R.get_dict()),strides = 1,padding='SAME',dilations=1)
-        return tf.reshape(outputs,inputs.shape[:-1] + outputs.shape[-1:])
+        x = tf.expand_dims(inputs,axis = -2)
+        Dflipped = tf.reverse(self.divide_by_R.get_dict(),axis=(0,1))
+        fltrSz = self.fltrSz
+        batchSz = x.shape[0]
+        sigSz = x.shape[1:3]
+        
+        xpad1 = tf.concat([x,x[slice(None),slice(0,(fltrSz[0] - 1))]],axis = 1)
+        xpad2 = tf.concat([xpad1,xpad1[slice(None),slice(None),slice(fltrSz[1] - 1)]],axis = 2)
 
+        outputs = tf.nn.conv2d_transpose(input = tf.reshape(xpad2,xpad2.shape[:-1]),filters = tf.transpose(Dflipped,perm=(0,1,3,2)),output_shape = (batchSz,sigSz[0] + fltrSz[0] - 1,sigSz[1] + fltrSz[1] - 1,self.nof),strides = 1,padding='SAME',dilations=1)
+        return tf.expand_dims(outputs[slice[None],slice(self.offset[0],-self.offset[0]),slice(self.offset[1],-self.offset[1])],axis = -2)
+    def freezeD(self,inputs):
+        x = tf.expand_dims(inputs,axis = -2)
+        Dflipped = tf.reverse(self.divide_by_R.get_dict(),axis=(0,1))
+        batchSz = x.shape[0]
+        sigSz = x.shape[1:3]
+        fltrSz = self.fltrSz
+
+        xpad1 = tf.concat([x,x[slice(None),slice(0,(fltrSz[0] - 1))]],axis = 1)
+        xpad2 = tf.concat([xpad1,xpad1[slice(None),slice(None),slice(fltrSz[1] - 1)]],axis = 2)
+
+        outputs = tf.nn.conv2d_transpose(input = tf.reshape(xpad2,xpad2.shape[:-1]),filters = tf.transpose(tf.stop_gradient(Dflipped),perm=(0,1,3,2)),output_shape = (batchSz,sigSz[0] + fltrSz[0] - 1,sigSz[1] + fltrSz[1] - 1,self.nof),strides = 1,padding='SAME',dilations=1)
+        return tf.expand_dims(outputs[slice[None],slice(self.offset[0],-self.offset[0]),slice(self.offset[1],-self.offset[1])],axis = -2)
+    def get_config(self):
+        config_dict = {'noc': self.noc,
+                       'nof': self.nof,
+                       'fltrSz': self.fltrSz,
+                        'offset': self.offset,
+                        'noc': self.noc,
+                        'nof': self.nof}
+        return config_dict
 
 class dictionary_object_init_sp(dictionary_object2D_init):
     def __init__(self,fftSz,D,rho,objname,n_components=3,cmplxdtype=tf.complex128,epsilon=1e-15,*args,**kwargs):

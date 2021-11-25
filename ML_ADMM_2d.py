@@ -69,7 +69,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         
         reversed_updateZ_layer = []
         #self.updateZ_layer = [[],]*(noL - 1)
-        self.updateGamma_layer = GetNextIterGamma(alpha=self.alpha,dtype=cmplxdtype)
+        self.updateGamma_layer = GetNextIterGamma(alpha=self.alpha,dtype=cmplxdtype.real_dtype)
 
         self.updateZ_lastlayer,mu = self.build_updateZ_lastlayer(fftSz[noL - 1],D[noL - 1].shape[-1],rho,mu_init[noL - 1],self.dictObj[noL - 1],b_init[noL - 1],cmplxdtype)
         if noL == 1:
@@ -407,10 +407,12 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
 
     def updateV(self,x_0,eta,s_crop,frozen=True):
+        print('x_0_shape: ',x_0.shape)
         if frozen:
             Dx = self.dictObj[0].dmul_sp.freezeD(x_0)
         else:
             Dx = self.dictObj[0].dmul_sp(x_0)
+        print('Dx_shape: ',Dx.shape)
         Bzero = self.updateBzero((tf.squeeze(Dx,axis = -2),eta,s_crop))        
         return (tf.expand_dims(self.cropAndMerge.merge((Bzero,Dx)),axis=-2),Bzero)
 
@@ -439,6 +441,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             z_over_R = self.dictObj[layer].divide_by_R(z)
         else:
             z_over_R = z
+        print('z_over_R shape: ',z_over_R.shape)
         if relax_bool:
             return self.updateGamma_layer.halfstep((gamma_scaled,z_over_R,x))
         else:
