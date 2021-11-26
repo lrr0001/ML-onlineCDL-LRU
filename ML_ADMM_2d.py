@@ -392,7 +392,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         return self.updateGamma(tf.cast(0.,tf.as_dtype(self.cmplxdtype.real_dtype)),Bz,Ax,layer,relax_bool=False)
 
     def etainit(self,Azero,Bzero,s_crop):
-        return tf.zeros(shape = s_crop.shape,dtype = self.cmplxdtype.real_dtype)
+        return tf.zeros(shape = tf.shape(s_crop),dtype = self.cmplxdtype.real_dtype)
 
 
     # Low-level Update Functions (x[layer],v,z[layer],eta,gamma[layer],Azero,Ax[layer],Bv,Bz[layer])
