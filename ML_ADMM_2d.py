@@ -300,37 +300,58 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         v,z = y
         Azero,Ax_layer = Ax
         Bzero,Bz = By
-        return self.representation_error(v,x) + self.coef_penalty(z) + self.cnstrPenalty(Azero,Bzero,eta,Ax,By,gamma,negC) - self.ucorrection(u)
+        eta,gamma = u
+        rep_err = self.representation_error(v,x,z)
+        print('representation error: ',rep_err)
+        coef_pen = self.coef_penalty(z)
+        print('coefficient_penalty: ', coef_pen)
+        cnstr_pen = self.cnstrPenalty(u,Ax,By,negC)
+        print('constraint penalty: ',cnstr_pen)
+        u_correction = self.ucorrection(u)
+        print('u correction: ',u_correction)
+        return rep_err + coef_pen + cnstr_pen - u_correction
+        #return self.representation_error(v,x,z) + self.coef_penalty(z) + self.cnstrPenalty(Azero,Bzero,eta,Ax,By,gamma,negC) - self.ucorrection(u)
 
     def representation_error(self,v,x,z):
-        mu = self.updateZ_layer[0].mu
-        representation_sum = mu/2*self.reconstructionTerm_sp(v,self.dictObj[0].dmul_sp(x))
+        if self.noL > 1:
+            mu = self.updateZ_layer[0].mu
+        else:
+            mu = self.updateZ_lastlayer.mu
+        representation_sum = mu/2*self.reconstructionTerm_sp(v,self.dictObj[0].dmul_sp(x[0]))
         for ll in range(1,self.noL - 1):
             mu = self.updateZ_layer[ll].mu
             representation_sum += mu/2*self.reconstructionTerm_sp(z[ll - 1],self.dictObj[ll].dmul_sp(x[ll]))
-        mu = self.updateZ_lastlayer.mu
-        representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 1],self.dictObj[self.noL].dmul_sp(x[self.noL]))
+        if self.noL > 1:
+            mu = self.updateZ_lastlayer.mu
+            representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 2],self.dictObj[self.noL].dmul_sp(x[self.noL - 1]))
         return representation_sum
 
     def coef_penalty(self,z):
-        penalty_sum = self.penaltyTerm(z[0],0)
+        if self.noL > 1:
+            penalty_sum = self.penaltyTerm(z[0],0)
+        else:
+            penalty_sum = tf.cast(0.0,self.cmplxdtype.real_dtype)
         for ll in range(1,self.noL - 1):
             penalty_sum += self.penaltyTerm(z[ll],ll)
         R = tf.reshape(self.dictObj[-1].divide_by_R.R,shape=(1,1,1,self.dictObj[-1].divide_by_R.R.shape[4],1))
         penalty_sum += self.penaltyTerm(z[self.noL - 1]*R,self.noL - 1)
+        return penalty_sum
 
-    def cnstrPenalty(self,Azero,Bzero,eta,Ax,By,gamma,negC):
+    def cnstrPenalty(self,u,Ax,By,negC):
         temp,s_crop = negC
-        cnstr_penalty_sum = (self.rho/2)*self.reconstructionTerm_sp(Azero + eta,s_crop)
+        eta,gamma = u
+        temp,Ax_layers = Ax
+        Bzero,Bz = By
+        cnstr_penalty_sum = (self.rho/2)*self.reconstructionTerm_sp(Bzero + eta,s_crop)
         for ii in range(self.noL - 1):
             R = tf.reshape(self.dictObj[ll].divide_by_R.R,shape=(1,1,1,self.dictObj[ll].divide_by_R.R.shape[4],1))
             mu = self.updateZ_layer[ll].mu
-            cnstr_penalty_sum += (mu*self.rho/2)*self.reconstructionTerm_sp(z[ll]/R + gamma[ll],x[ll])
+            cnstr_penalty_sum += (mu*self.rho/2)*self.reconstructionTerm_sp(Bz[ll]/R + gamma[ll],Ax_layers[ll])
         mu = self.updateZ_lastlayer.mu
-        cnstr_penalty_sum += (mu*self.rho/2)*self.reconstructionTerm_sp(z[self.noL - 1] + gamma[self.noL - 1],x[self.noL - 1])
+        cnstr_penalty_sum += (mu*self.rho/2)*self.reconstructionTerm_sp(Bz[self.noL - 1] + gamma[self.noL - 1],Ax_layers[self.noL - 1])
         return cnstr_penalty_sum
 
-    def ucorrection(u):
+    def ucorrection(self,u):
         eta,gamma = u
         unorm = (self.rho/2)*tf.reduce_sum(tf.math.square(eta))
         for ll in range(self.noL):
@@ -363,10 +384,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def xinit(self,xprev,layer):
         if layer == 0:
-            print('xprevlayer_shape: ',xprev.shape)
-            print('D_shape: ',self.dictObj[layer].dtmul_sp.divide_by_R.D.shape)
             Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev)
-            print('xcurrlayer_shape: ',Dhx.shape)
         else:
             Rprev = util.rotate_dims_left(self.dictObj[layer - 1].divide_by_R.R,5) # Fix this later, can be implemented more efficiently
             Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev*Rprev)
@@ -374,7 +392,6 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         #Rsquared = tf.math.square(self.dictObj[layer].divide_by_R.R)
         #print('Rsquared_shape: ',Rsquared.shape)
         Dhx_scaled =  Dhx/Rsquared
-        print('still xcurrlayer_shape: ',Dhx_scaled.shape)
         return Dhx_scaled
 
 
@@ -411,12 +428,10 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
 
     def updateV(self,x_0,eta,s_crop,frozen=True):
-        print('x_0_shape: ',x_0.shape)
         if frozen:
             Dx = self.dictObj[0].dmul_sp.freezeD(x_0)
         else:
             Dx = self.dictObj[0].dmul_sp(x_0)
-        print('Dx_shape: ',Dx.shape)
         Dx = tf.squeeze(Dx,axis = -1)
         Bzero = self.updateBzero((Dx,eta,s_crop))
         return (tf.expand_dims(self.cropAndMerge.merge((Bzero,Dx)),axis=-1),Bzero)
@@ -446,7 +461,6 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             z_over_R = self.dictObj[layer].divide_by_R(z)
         else:
             z_over_R = z
-        print('z_over_R shape: ',z_over_R.shape)
         if relax_bool:
             return self.updateGamma_layer.halfstep((gamma_scaled,z_over_R,x))
         else:
@@ -519,18 +533,12 @@ class GetNextIterX(tf.keras.layers.Layer):
         self.IFFT = IFFT
     def call(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        print('z_prevlayer_shape: ',z_prevlayer.shape)
-        print('z_over_R_shape: ',z_over_R.shape)
-        print('gamma_scaled: ',gamma_scaled.shape)
         preQinv = self.FFT(self.dictObj.dtmul_sp.freezeD(z_prevlayer) + self.rho*z_over_R + gamma_scaled)
         
         postQinv = self.IFFT(self.dictObj.freezeD(preQinv))
         return postQinv
     def thawD(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
-        print('z_prevlayer_shape: ',z_prevlayer.shape)
-        print('z_over_R_shape: ',z_over_R.shape)
-        print('gamma_scaled: ',gamma_scaled.shape)
         preQinv = self.FFT(self.dictObj.dtmul_sp(z_prevlayer) + self.rho*z_over_R + gamma_scaled)
         
         postQinv = self.IFFT(self.dictObj(preQinv))
@@ -647,7 +655,7 @@ class GetNextIterGamma(tf.keras.layers.Layer):
     def halfstep(self,inputs):
         ''' same update equation, only with overrelaxation (or under-relaxation).'''
         gamma_scaled,z_over_R,Ax = inputs
-        return gamma_scaled + (tf.cast(1.,tf.as_dtype(self.dtype)) - self.alpha)*(z_over_R - Ax)
+        return gamma_scaled + (self.alpha - tf.cast(1.,tf.as_dtype(self.dtype)))*(z_over_R - Ax)
 
 class UpdateEta(tf.keras.layers.Layer):
     def __init__(self,alpha,*args,**kwargs):
@@ -658,7 +666,7 @@ class UpdateEta(tf.keras.layers.Layer):
         return eta_scaled + croppedv - negC
     def halfstep(self,inputs):
         eta_scaled,croppedv,negC = inputs
-        return eta_scaled + (tf.cast(1.,tf.as_dtype(self.dtype)) - self.alpha)*(croppedv - negC)
+        return eta_scaled + (self.alpha - tf.cast(1.,tf.as_dtype(self.dtype)))*(croppedv - negC)
 
 
 class GetNextIterBZero(tf.keras.layers.Layer):

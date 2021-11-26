@@ -729,7 +729,7 @@ class MulDT_Sp(tf.keras.layers.Layer):
 
         xpad1 = tf.concat([x,x[slice(None),slice(0,(fltrSz[0] - 1))]],axis = 1)
         xpad2 = tf.concat([xpad1,xpad1[slice(None),slice(None),slice(fltrSz[1] - 1)]],axis = 2)
-        shape2 = tf.zeros((1,sigSz[0] + fltrSz[0] - 1,sigSz[1] + fltrSz[1],Dflipped.shape[-1]),dtype = tf.int32).shape
+        shape2 = tf.zeros((1,sigSz[0] + fltrSz[0] - 1,sigSz[1] + fltrSz[1] - 1,Dflipped.shape[-1]),dtype = tf.int32).shape
         outputshape = tf.broadcast_dynamic_shape(tf.shape(x[slice(None),slice(0,1),slice(0,1),slice(0,1)]),shape2)
 
         outputs = tf.nn.conv2d_transpose(input = xpad2,filters = tf.transpose(Dflipped,perm=(0,1,3,2)),output_shape = outputshape,strides = 1,padding='SAME',dilations=1)
