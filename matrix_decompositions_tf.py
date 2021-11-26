@@ -720,7 +720,7 @@ class MulDT_Sp(tf.keras.layers.Layer):
         return self.convt(x,Dflipped)
     def freezeD(self,inputs):
         x = tf.squeeze(inputs,axis = -1)
-        Dflipped = tf.gradient_stop(tf.reverse(self.divide_by_R.get_dict(),axis=(0,1)))
+        Dflipped = tf.stop_gradient(tf.reverse(self.divide_by_R.get_dict(),axis=(0,1)))
         return self.convt(x,Dflipped)
     def convt(self,x,Dflipped):
         batchSz = x.shape[0]

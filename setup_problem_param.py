@@ -5,7 +5,7 @@ import numpy as np
 nof = [64,]
 noc = 1
 stride = [1]
-fltrSz = ((10,10),)
+fltrSz = ((11,11),)
 noL = len(fltrSz)
 noi =  32
 dtype = 'float64'

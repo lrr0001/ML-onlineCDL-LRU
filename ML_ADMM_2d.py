@@ -171,7 +171,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
         x,Ax = self.xstep_trunc(y,u,By,negC,layer=0)
         Dx = self.dictObj[0].dmul_sp(x[0])
-        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-2)),itstats)
+        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)),itstats)
 
     def get_b_shape(self,fftSz,M):
         #return [1,fftSz[0],fftSz[1],M,1,]
@@ -192,7 +192,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         s_HF,temp1,temp2 = s
         temp,s_crop = negC
         x = []
-        x.append(self.xinit(tf.expand_dims(s_HF,axis = -2),layer = 0))
+        x.append(self.xinit(tf.expand_dims(s_HF,axis = -1),layer = 0))
         for ii in range(1,self.noL):
             if self.strides[ii - 1] == 2:
                 x.append(self.xinit(util.freq_downsample(x[ii - 1]),layer=ii))
@@ -348,7 +348,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             mu = self.updateZ_lastlayer.mu
         #tf.print('first mu: ',mu)
         Dx = self.dictObj[0].dmul_sp.freezeD(z_curr)
-        reconErr = (mu/2)*self.reconstructionTerm_sp(self.cropAndMerge.crop(tf.squeeze(Dx,axis=-2)),negC)
+        reconErr = (mu/2)*self.reconstructionTerm_sp(self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)),negC)
         for layer in range(1,self.noL):
             if layer < self.noL - 1:
                 z_curr = self.dictObj[layer].divide_by_R(z[layer])
@@ -363,20 +363,24 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def xinit(self,xprev,layer):
         if layer == 0:
-            print('xprev_shape: ',xprev.shape)
+            print('xprevlayer_shape: ',xprev.shape)
+            print('D_shape: ',self.dictObj[layer].dtmul_sp.divide_by_R.D.shape)
             Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev)
+            print('xcurrlayer_shape: ',Dhx.shape)
         else:
             Rprev = util.rotate_dims_left(self.dictObj[layer - 1].divide_by_R.R,5) # Fix this later, can be implemented more efficiently
             Dhx = self.dictObj[layer].dtmul_sp.freezeD(xprev*Rprev)
-        #Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].divide_by_R.R),5) # Fix this later, can be implemented more efficiently
-        Rsquared = tf.math.square(self.dictObj[layer].divide_by_R.R)
-        print('Rsquared_shape: ',Rsquared.shape)
-        return Dhx/Rsquared
+        Rsquared = util.rotate_dims_left(tf.math.square(self.dictObj[layer].divide_by_R.R),5) # Fix this later, can be implemented more efficiently
+        #Rsquared = tf.math.square(self.dictObj[layer].divide_by_R.R)
+        #print('Rsquared_shape: ',Rsquared.shape)
+        Dhx_scaled =  Dhx/Rsquared
+        print('still xcurrlayer_shape: ',Dhx_scaled.shape)
+        return Dhx_scaled
 
 
     def vinit(self,s,x_0,s_crop):
         s_HP,s_LP,compressed = s
-        return (tf.expand_dims(s_HP,axis=-2),s_crop)
+        return (tf.expand_dims(s_HP,axis=-1),s_crop)
 
     #def zinit(self,xnext,Ax,layer):     
     #    return self.updateZ(xnext,Ax,tf.reshape(tf.cast(0.,tf.as_dtype(self.cmplxdtype.real_dtype)),(1,1,1,1,1)),layer)
@@ -413,8 +417,9 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         else:
             Dx = self.dictObj[0].dmul_sp(x_0)
         print('Dx_shape: ',Dx.shape)
-        Bzero = self.updateBzero((tf.squeeze(Dx,axis = -2),eta,s_crop))        
-        return (tf.expand_dims(self.cropAndMerge.merge((Bzero,Dx)),axis=-2),Bzero)
+        Dx = tf.squeeze(Dx,axis = -1)
+        Bzero = self.updateBzero((Dx,eta,s_crop))
+        return (tf.expand_dims(self.cropAndMerge.merge((Bzero,Dx)),axis=-1),Bzero)
 
 
     def updateZ(self,x_nextlayer,Ax,gamma_scaled,layer,frozen=True):
@@ -518,22 +523,18 @@ class GetNextIterX(tf.keras.layers.Layer):
         print('z_over_R_shape: ',z_over_R.shape)
         print('gamma_scaled: ',gamma_scaled.shape)
         preQinv = self.FFT(self.dictObj.dtmul_sp.freezeD(z_prevlayer) + self.rho*z_over_R + gamma_scaled)
-        preQinv = tf.expand_dims(tf.squeeze(preQinv,axis = -2),axis = -1)
         
         postQinv = self.IFFT(self.dictObj.freezeD(preQinv))
-        outputs = tf.expand_dims(tf.squeeze(postQinv,axis = -1),axis = -2)
-        return outputs
+        return postQinv
     def thawD(self,inputs):
         z_prevlayer,z_over_R,gamma_scaled = inputs
         print('z_prevlayer_shape: ',z_prevlayer.shape)
         print('z_over_R_shape: ',z_over_R.shape)
         print('gamma_scaled: ',gamma_scaled.shape)
         preQinv = self.FFT(self.dictObj.dtmul_sp(z_prevlayer) + self.rho*z_over_R + gamma_scaled)
-        preQinv = tf.expand_dims(tf.squeeze(preQinv,axis = -2),axis = -1)
         
         postQinv = self.IFFT(self.dictObj(preQinv))
-        outputs = tf.expand_dims(tf.squeeze(postQinv,axis = -1),axis = -2)
-        return outputs
+        return postQinv
     def get_config(self):
         return {'rho': self.rho}
 
