@@ -734,7 +734,12 @@ class MulDT_Sp(tf.keras.layers.Layer):
 
         outputs = tf.nn.conv2d_transpose(input = xpad2,filters = tf.transpose(Dflipped,perm=(0,1,3,2)),output_shape = outputshape,strides = 1,padding='SAME',dilations=1)
         outputs = outputs[slice(None),slice(self.offset[0],-self.offset[0]),slice(self.offset[1],-self.offset[1])]
-        return tf.expand_dims(outputs,axis = -1)
+        outputs = tf.expand_dims(outputs,axis = -1)
+        outputs.set_shape(self.compute_output_shape(x.shape + (1,)))
+        return outputs
+    def compute_output_shape(self,input_shape):
+        return input_shape[:-2] + (self.nof,1)
+
 
     def get_config(self):
         config_dict = {'noc': self.noc,
