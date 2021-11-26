@@ -673,7 +673,6 @@ class Coef_Divide_By_R(tf.keras.layers.Layer):
                 self.Dprev = tf.Variable(initial_value = D,trainable=False,name='Dprev')
     def call(self,inputs):
         R = tf.cast(tf.reshape(self.R,self.R.shape[:3] + (self.R.shape[4],self.R.shape[3],) + self.R.shape[5:]),dtype=self.dtype)
-        print('R_shape: ',self.R.shape)
         return inputs/R
     def get_dict(self):
         return tf.reshape(self.D,self.D.shape[1:])
@@ -756,7 +755,7 @@ class dictionary_object_init_sp(dictionary_object2D_init):
         self.dtmul_sp = MulDT_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
         self.dmul_sp = MulD_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
     def get_divide_by_R(self,Dnormalized,noc,name,dtype):
-        return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=dtype)
+        return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=tf.as_dtype(self.dtype).real_dtype)
     def _dict_update_LR(self):
         Dnew = self.get_constrained_D(tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)) + self.divide_by_R.D - self.divide_by_R.Dprev
         DbeforeApprox = self.DbeforeApprox.assign(Dnew)
@@ -782,7 +781,7 @@ class dictionary_object_init_full_sp(dictionary_object2D_init_full):
         self.dtmul_sp = MulDT_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
         self.dmul_sp = MulD_Sp(self.divide_by_R,dtype=cmplxdtype.real_dtype)
     def get_divide_by_R(self,Dnormalized,noc,name,dtype):
-        return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=dtype)
+        return Coef_Divide_By_R(Dnormalized,noc,trainableD = True,name=name,dtype=tf.as_dtype(self.dtype).real_dtype)
     def _dict_update_full(self):
         Df = tf.complex(self.dhmul.Dfreal,self.dhmul.Dfimag)
         Dnew = self.get_constrained_D(Df) + self.divide_by_R.D - self.divide_by_R.Dprev

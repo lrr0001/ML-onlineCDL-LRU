@@ -134,7 +134,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
             # **** Frequency domain or Spatial Domain???? Changed to Frequency domain****
             #zUpdate = GetNextIterZFreq(rho,self.IFFT[layer],tf.cast(mu_init,cmplxdtype.real_dtype),munext,dictObj,nextdictObj,b,dtype=cmplxdtype,name='Z_layer' + str(layer))
-            zUpdate = GetNextIterZ(rho,tf.cast(mu_init,cmplxdtype.realdtype),munext,dictObj,nextdictObj,b,dtype=cmplxdtype.real_dtype,name='Z_layer' + str(layer))
+            zUpdate = GetNextIterZ(rho,tf.cast(mu_init,cmplxdtype.real_dtype),munext,dictObj,nextdictObj,b,dtype=cmplxdtype.real_dtype,name='Z_layer' + str(layer))
 
 
             return zUpdate,zUpdate.mu
@@ -323,7 +323,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             representation_sum += mu/2*self.reconstructionTerm_sp(z[ll - 1],self.dictObj[ll].dmul_sp(x[ll]))
         if self.noL > 1:
             mu = self.updateZ_lastlayer.mu
-            representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 2],self.dictObj[self.noL].dmul_sp(x[self.noL - 1]))
+            representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 2],self.dictObj[self.noL - 1].dmul_sp(x[self.noL - 1]))
         return representation_sum
 
     def coef_penalty(self,z):
@@ -343,7 +343,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         temp,Ax_layers = Ax
         Bzero,Bz = By
         cnstr_penalty_sum = (self.rho/2)*self.reconstructionTerm_sp(Bzero + eta,s_crop)
-        for ii in range(self.noL - 1):
+        for ll in range(self.noL - 1):
             R = tf.reshape(self.dictObj[ll].divide_by_R.R,shape=(1,1,1,self.dictObj[ll].divide_by_R.R.shape[4],1))
             mu = self.updateZ_layer[ll].mu
             cnstr_penalty_sum += (mu*self.rho/2)*self.reconstructionTerm_sp(Bz[ll]/R + gamma[ll],Ax_layers[ll])
@@ -571,7 +571,6 @@ class GetNextIterZ(tf.keras.layers.Layer,ppg.PostProcess):
             self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
         #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
-        self.ifft = ifft
         ppg.PostProcess.add_update(self.b.name,self._update_b)
         ppg.PostProcess.add_update(self.mu.name,self._update_mu)
 
