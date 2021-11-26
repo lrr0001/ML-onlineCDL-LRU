@@ -715,14 +715,14 @@ class MulDT_Sp(tf.keras.layers.Layer):
         self.nof = self.divide_by_R.D.shape[-1]
         super().__init__(*args,**kwargs)
     def call(self,inputs):
-        x = tf.expand_dims(inputs,axis = -2)
+        x = tf.squeeze(inputs,axis = -1)
         Dflipped = tf.reverse(self.divide_by_R.get_dict(),axis=(0,1))
         return self.convt(x,Dflipped)
     def freezeD(self,inputs):
-        x = tf.expand_dims(inputs,axis = -1)
+        x = tf.squeeze(inputs,axis = -1)
         Dflipped = tf.gradient_stop(tf.reverse(self.divide_by_R.get_dict(),axis=(0,1)))
         return self.convt(x,Dflipped)
-    def convt(self,x,Dflipped)
+    def convt(self,x,Dflipped):
         batchSz = x.shape[0]
         sigSz = x.shape[1:3]
         fltrSz = self.fltrSz
@@ -730,8 +730,9 @@ class MulDT_Sp(tf.keras.layers.Layer):
         xpad1 = tf.concat([x,x[slice(None),slice(0,(fltrSz[0] - 1))]],axis = 1)
         xpad2 = tf.concat([xpad1,xpad1[slice(None),slice(None),slice(fltrSz[1] - 1)]],axis = 2)
 
-        outputs = tf.nn.conv2d_transpose(input = tf.reshape(xpad2,xpad2.shape[:-1]),filters = tf.transpose(tf.stop_gradient(Dflipped),perm=(0,1,3,2)),output_shape = (batchSz,sigSz[0] + fltrSz[0] - 1,sigSz[1] + fltrSz[1] - 1,self.nof),strides = 1,padding='SAME',dilations=1)
-        return tf.expand_dims(outputs[slice[None],slice(self.offset[0],-self.offset[0]),slice(self.offset[1],-self.offset[1])],axis = -1)
+        outputs = tf.nn.conv2d_transpose(input = xpad2,filters = tf.transpose(tf.stop_gradient(Dflipped),perm=(0,1,3,2)),output_shape = (batchSz,sigSz[0] + fltrSz[0] - 1,sigSz[1] + fltrSz[1] - 1,self.nof),strides = 1,padding='SAME',dilations=1)
+        outputs = outputs[slice(None),slice(self.offset[0],-self.offset[0]),slice(self.offset[1],-self.offset[1])]
+        return tf.expand_dims(outputs,axis = -1)
 
     def get_config(self):
         config_dict = {'noc': self.noc,
