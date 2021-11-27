@@ -106,8 +106,7 @@ for (x,y) in dataset_batch:
     break
 
 #   ******** BUILD MODEL ********
-CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
-
+CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
 
 # Build Input Layers
 highpassShape = (targetSz[0] + paddingTuple[0][0] + paddingTuple[0][1],targetSz[1] + paddingTuple[1][0] + paddingTuple[1][1],noc)
