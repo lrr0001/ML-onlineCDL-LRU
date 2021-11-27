@@ -13,7 +13,7 @@ mu_init = 1.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 8
-steps_per_epoch = 64
+steps_per_epoch = 128
 step_size = 0.01
 num_of_epochs = 128
 
@@ -106,7 +106,7 @@ for (x,y) in dataset_batch:
     break
 
 #   ******** BUILD MODEL ********
-CSC = mlcsc.MultiLayerCSC_SC(rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
+CSC = mlcsc.MultiLayerCSC(rho,alpha_init,mu_init,b_init,qY,cropAndMerge,fftSz,strides,problem_param['D'],n_components,noi,noL,cmplxdtype)
 
 
 # Build Input Layers
@@ -116,15 +116,15 @@ lowpass = tf.keras.Input(shape = highpassShape,dtype = real_dtype)
 compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
 inputs = (highpass,lowpass,compressed)
 
-reconstruction,reconstruction2,itstats = CSC(inputs)
+reconstruction,itstats = CSC(inputs)
 #rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 #clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
-clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
+#clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
 #yuv_reconstruction = jrf.RGB2YUV(dtype=real_dtype)(clipped_reconstruction)
 import post_process_grad as ppg
 #model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 #model = tf.keras.Model(inputs,yuv_reconstruction)
-model = tf.keras.Model(inputs,clipped_reconstruction)
+model = tf.keras.Model(inputs,reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 
