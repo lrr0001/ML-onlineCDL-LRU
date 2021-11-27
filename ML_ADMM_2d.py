@@ -558,7 +558,7 @@ class GetNextIterZ(tf.keras.layers.Layer,ppg.PostProcess):
      outputs: unlike inputs, output is in spatial domain
        z: \vz_{\ell}^{(k + 1)}
     '''
-    def __init__(self,rho,mu_init,mu_nextlayer,dictObj,dictObj_nextlayer,b_init,*args,**kwargs):
+    def __init__(self,rho,mu_init,mu_nextlayer,dictObj,dictObj_nextlayer,b_init,trainable = False,*args,**kwargs):
         #super().__init__(*args,**kwargs)
         tf.keras.layers.Layer.__init__(self,*args,**kwargs)
         self.rho = rho
@@ -567,12 +567,13 @@ class GetNextIterZ(tf.keras.layers.Layer,ppg.PostProcess):
         self.dictObj = dictObj
         self.dictObj_nextlayer = dictObj_nextlayer
         with tf.name_scope(self.name):
-            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
-            self.b = tf.Variable(b_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
+            self.mu = tf.Variable(mu_init,trainable=trainable,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
+            self.b = tf.Variable(b_init,trainable=trainable,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
         #self.relu = tf.keras.layers.ReLU(dtype=tf.as_dtype(self.dtype).real_dtype)
         self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
-        ppg.PostProcess.add_update(self.b.name,self._update_b)
-        ppg.PostProcess.add_update(self.mu.name,self._update_mu)
+        if trainable:
+            ppg.PostProcess.add_update(self.b.name,self._update_b)
+            ppg.PostProcess.add_update(self.mu.name,self._update_mu)
 
     def _update_b(self):
         return [self.b.assign(tf.where(self.b < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.b)),]
@@ -604,17 +605,18 @@ class GetNextIterZ_lastlayer(tf.keras.layers.Layer,ppg.PostProcess):
       outputs: Unlike inputs, output is in spatial domain
         z_over_R: \mR_L^{-1}\vz_L^{(k + 1)}
     '''
-    def __init__(self,rho,mu_init,dictObj,b_init,*args,**kwargs):
+    def __init__(self,rho,mu_init,dictObj,b_init,trainable = False,*args,**kwargs):
         #super().__init__(*args,**kwargs)
         tf.keras.layers.Layer.__init__(self,*args,**kwargs)
         
         self.dictObj = dictObj
         with tf.name_scope(self.name):
-            self.mu = tf.Variable(mu_init,trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
-            self.b = tf.Variable(b_init/(rho*mu_init),trainable=True,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
+            self.mu = tf.Variable(mu_init,trainable=trainable,dtype=tf.as_dtype(self.dtype).real_dtype,name='mu')
+            self.b = tf.Variable(b_init/(rho*mu_init),trainable=trainable,dtype=tf.as_dtype(self.dtype).real_dtype,name='b')
         self.relu = util.Shrinkage(dtype=tf.as_dtype(self.dtype).real_dtype)
-        ppg.PostProcess.add_update(self.b.name,self._update_b)
-        ppg.PostProcess.add_update(self.mu.name,self._update_mu)
+        if trainable:
+            ppg.PostProcess.add_update(self.b.name,self._update_b)
+            ppg.PostProcess.add_update(self.mu.name,self._update_mu)
 
     def _update_b(self):
         return [self.mu.assign(tf.where(self.mu < 0.,tf.cast(0,dtype=tf.as_dtype(self.dtype).real_dtype),self.mu))]

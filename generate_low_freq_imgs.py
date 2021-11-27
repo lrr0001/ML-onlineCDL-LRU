@@ -9,10 +9,10 @@ alpha = 1.5
 noi = 20
 lmbda = 0.1
 dtype = 'float64'
-lmbda_t = 1.0
+lmbda_t = 3*lmbda
 
-#datasetname = 'BSDS500/'
-datasetname = 'simpleTest/'
+datasetname = 'BSDS500/'
+#datasetname = 'simpleTest/'
 
 # Obtain quantization matrices from chosen quality factor
 import PIL

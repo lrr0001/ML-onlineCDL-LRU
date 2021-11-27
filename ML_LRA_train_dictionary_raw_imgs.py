@@ -1,6 +1,6 @@
 import tensorflow as tf
 import jpeg_related_functions as jrf
-import multilayerCSC_ADMM as mlcsc
+import ML_ADMM_2d as mlcsc
 import numpy as np
 import pickle as pkl
 import datetime
@@ -10,13 +10,12 @@ import util
 rho = 1.
 alpha_init = 1.5
 mu_init = 1.
-b_init = 0.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
-batch_size = 1
-steps_per_epoch = 1028
+batch_size = 8
+steps_per_epoch = 64
 step_size = 0.01
-num_of_epochs = 160
+num_of_epochs = 128
 
 
 #   ******** DATA AND EXPERIMENT PARAMETERS ********
@@ -32,6 +31,7 @@ fid = open(experimentpath + 'problem_param.pckl','rb')
 problem_param = pkl.load(fid)
 fid.close()
 data_param = problem_param['data_param']
+b_init = problem_param['b_init']
 targetSz = data_param['target_size']
 qY = data_param['qY']
 qUV = data_param['qUV']
@@ -116,15 +116,15 @@ lowpass = tf.keras.Input(shape = highpassShape,dtype = real_dtype)
 compressed = tf.keras.Input(shape = (targetSz[0],targetSz[1],noc),dtype= real_dtype)
 inputs = (highpass,lowpass,compressed)
 
-reconstruction,itstats = CSC(inputs)
+reconstruction,reconstruction2,itstats = CSC(inputs)
 #rgb_reconstruction = jrf.YUV2RGB(dtype=real_dtype)(reconstruction)
 #clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(rgb_reconstruction)
-#clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
+clipped_reconstruction = util.clip(a = 0.,b = 1.,dtype=real_dtype)(reconstruction)
 #yuv_reconstruction = jrf.RGB2YUV(dtype=real_dtype)(clipped_reconstruction)
 import post_process_grad as ppg
 #model = ppg.Model_PostProcess(inputs,clipped_reconstruction)
 #model = tf.keras.Model(inputs,yuv_reconstruction)
-model = tf.keras.Model(inputs,reconstruction)
+model = tf.keras.Model(inputs,clipped_reconstruction)
 
 #   ******** COMPILE AND TRAIN MODEL ********
 
