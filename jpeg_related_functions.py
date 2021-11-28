@@ -587,24 +587,43 @@ class I_dont_know_what_to_call_this:
         ''' Computes the bottom right result. Assumes TL, TR, and BL have all already been computed. '''
         return (self.b*(tr + bl) + self.a*br)/(self.a + 2*self.b)
 
-def row_fun(x,a,b,real_dtype):
-    sig_2_blks = tf.keras.layers.Reshape((x.shape[1]/8,8,x.shape[2]/8,8) + x.shape[3:],dtype=real_dtype)
-    blks_2_sig = tf.keras.layers.Reshape(x.shape[1:],dtype=real_dtype)
+def smoothPair(x1,x2,a):
+    '''Solution minimizing the equation: (z1 - x1)^2 + (z2 - x2)^2 + a(z1 - z2)^2'''
+    z1 = ((1 + a)*x1 + a*x2)/(1 + 2*a)
+    z2 = (a*x1 + (1 + a)*x2)/(1 + 2*a)
+    return z1,z2
 
-    rows_done = my_fun(sig_2_blks(x),a,b,axis = 2,blkSz=8,dtype=real_dtype)
+def smoothFour(z1,z2,z3,z4,a):
+    '''Solution minimizing the equation: sum_i (yi - xi)^2 + a(y1 - y2)^2 + a(y1 - y3)^2 + a(y2 - y4)^2 + a(y3 - y4)^2
+       where z1, z2, z3, and z4 are computed from x1, x2, x3, and x4 using smooth pair.
+       temp1,temp2 = jrf.smoothPair(x1,x2,a)
+       temp3,temp4 = jrf.smoothPair(x3,x4,a)
+       z1,z3 = jrf.smoothPair(temp1,temp3,a)
+       z2,z4 = jrf.smoothPair(temp2,temp4,a) '''
+    y1 = ((a**2 + 4*a + 1)*z1 - a**2*z2 - a**2*z3 + a**2*z4)/(4*a + 1)
+    y2 = (-a**2*z1 + (a**2 + 4*a + 1)*z2 + a**2*z3 - a**2*z4)/(4*a + 1)
+    y3 = (-a**2*z1 + a**2*z2 + (a**2 + 4*a + 1)*z3 - a**2*z4)/(4*a + 1)
+    y4 = (a**2*z1 - a**2*z2  - a**2*z3 + (a**2 + 4*a + 1)*z4)/(4*a + 1)
+    return y1,y2,y3,y4
 
-    cols_done = my_fun(rows_done,a,b,axis = 4,blkSz = 8,dtype = real_dtype)
+def smooth_blk_edges(x,a,blkSz = (8,8),dtype = tf.float64):
+    sig_2_blks = tf.keras.layers.Reshape((x.shape[1]/blkSz[0],blkSz[0],x.shape[2]/blkSz[1],blkSz[1]) + x.shape[3:],dtype=dtype)
+    blks_2_sig = tf.keras.layers.Reshape(x.shape[1:],dtype=dtype)
+
+    rows_done = smoothXsect(sig_2_blks(x),a,axis = 2,blkSz=blkSz[0],dtype=dtype)
+
+    cols_done = smoothXsect(rows_done,a,axis = 4,blkSz = blkSz[1],dtype = dtype)
 
     return blks_2_sig(cols_done)
 
-def my_fun(blks,a,b,axis,blkSz,dtype):
+def smoothXsect(blks,a,axis,blkSz,dtype):
+    '''This function applies smoothPair to pairs of cross-sections selected by axis and blkSz.'''
     slices = [slice(None),]*(axis - 1) + [slice(0,-1),slice(blkSz - 1,None)]
     xsect1 = blks[slices[:]]
     slices = [slice(None),]*(axis - 1) + [slice(1,None),slice(0,1)]
     xsect2 = blks[slices[:]]
 
-    newXsect = ((a + b)*xsect1 + b*xsect2)/(a + 2*b)
-    newXsect = (b*xsect1 + (a + b)*xsect2)/(a + 2*b)
+    newXsect1,newXsect2 = smoothPair(xsect1,xsect2,a)
 
     temp1 = tf.one_hot(indices = (blkSz - 1)*tf.ones((1,)*(len(blks.shape) - 1),dtype= 'int32'), depth = blkSz, on_value = 1., off_value = 0.,axis = axis, dtype = dtype)
 
@@ -618,6 +637,93 @@ def my_fun(blks,a,b,axis,blkSz,dtype):
     slices = [slice(None),]*(axis - 1) + [slice(1,None),slice(0,1)]
     withXsect2 = (tf.cast(1.,dtype= dtype) - temp2)*withXsect1[slices[:]] + temp2*newXect2
     slices = [slice(None),]*(axis - 1) + [slice(0,1),slice(None)]
-    withXsect2 = tf.concat([withXsect1[slices[:]],withXsect2],axis = axis)
+    withXsect2 = tf.concat([withXsect1[slices[:]],withXsect2],axis = axis - 1)
 
     return withXsect2
+
+def smoothCorners(blks,a,axis1,axis2,blkSz,dtype):
+    ''' Welcome to an indexing nightmare.  It's a shame tensorflow doesn't allow for slice-based assignment.'''
+    # selects this top left corner
+    slices = [slice(None),]*(axis1 - 1) + [slice(0,-1),slice(blkSz[0] - 1,None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(blkSz[1] - 1,None)]
+    zsect1 = blks[slices[:]]
+    # selects the bottom left corner
+    slices = [slice(None),]*(axis1 - 1) + [slice(1,None),slice(0,1)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(blkSz[1] - 1,None)]
+    zsect2 = blks[slices[:]]
+    # selects the top right corner
+    slices = [slice(None),]*(axis1 - 1) + [slice(0,-1),slice(blkSz[0] - 1,None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(0,1)]
+    zsect3 = blks[slices[:]]
+    # selects the bottom right corner
+    slices = [slice(None),]*(axis1 - 1) + [slice(1,None),slice(0,1)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(0,1)]
+    zsect4 = blks[slices[:]]
+
+
+    # Wait, is this right?  Or should 2 and 3 be swapped???
+    ysect1,ysect2,ysect3,ysect4 = smoothFour(zsect1,zsect2,zsect3,zsect4,a)
+    # select last row
+    last_row_select = tf.one_hot(indices = (blkSz - 1)*tf.ones((1,)*(len(blks.shape) - 1),dtype= 'int32'), depth = blkSz, on_value = 1., off_value = 0.,axis = axis1, dtype = dtype)
+    # select first row
+    first_row_select = tf.one_hot(indices = tf.zeros((1,)*(len(blks.shape) - 1),dtype='int32'), depth = blkSz, on_value = 1., off_value = 0., axis = axis1, dtype = dtype)
+    # select last column
+    last_col_select = tf.one_hot(indices = (blkSz - 1)*tf.ones((1,)*(len(blks.shape) - 1),dtype= 'int32'), depth = blkSz, on_value = 1., off_value = 0.,axis = axis2, dtype = dtype)
+    # select first column
+    first_col_select = tf.one_hot(indices = tf.zeros((1,)*(len(blks.shape) - 1),dtype='int32'), depth = blkSz, on_value = 1., off_value = 0., axis = axis2, dtype = dtype)
+
+
+    # **** ADDING TOP LEFT ****
+    # select last column of all but last row and last column of blocks
+    slices = [slice(None),]*(axis1 - 1) + [slice(0,-1),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(blksz[1] - 1,None)]
+    last_col = (tf.cast(1.,dtype) - last_row_select)*blks[slices[:]] + ysect1*last_row_select
+    # select all except last column of all but last row and last column of blocks.
+    slices = [slice(None),]*(axis1 - 1) + [slice(0,-1),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(0,-1)]
+
+    temp = tf.concat([blks[slices[:]],last_col],axis2)
+    # select bottom row of blocks (excluding last column of blocks)
+    slices1 = [slice(None),]*(axis1 - 1) + [slice(-1,None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(None)]
+    # select last column of blocks
+    slices2 = [slice(None),]*(axis1 - 1) + [slice(None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(-1,None),slice(None)]
+    include_tl = tf.concat([tfconcat([temp,blks[slices1[:]]], axis = axis1 - 1),blks[slices2[:]]],axis = axis2 - 1)
+
+
+    # **** ADDING BOTTOM LEFT ****
+    # select last column of all but first row and last column of blocks
+    slices = [slice(None),]*(axis1 - 1) + [slice(1,None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(blksz[1] - 1,None)]
+    last_col = (tf.cast(1.,dtype) - first_row_select)*include_tl[slices[:]] + ysect2*first_row_select
+
+    slices = [slice(None),]*(axis1 - 1) + [slice(0,-1),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(0,-1)]
+    temp = tf.concat([include_tl[slices[:]],last_col],axis2)
+
+    # select top row of blocks (excluding last column of blocks)
+    slices1 = [slice(None),]*(axis1 - 1) + [slice(0,1),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,-1),slice(None)]
+    # select last column of blocks
+    slices2 = [slice(None),]*(axis1 - 1) + [slice(None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(-1,None),slice(None)]
+    include_bl = tf.concat([tfconcat([temp,include_tl[slices1[:]]], axis = axis1 - 1),include_tl[slices2[:]]],axis = axis2 - 1)
+
+    # **** ADDING TOP Right ****
+    # select first column of all but last row and first column of blocks
+    slices = [slice(None),]*(axis1 - 1) + [slice(0,-1),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(0,1)]
+    first_col = (tf.cast(1.,dtype) - last_row_select)*include_bl[slices[:]] + ysect3*last_row_select
+
+    slices = [slice(None),]*(axis1 - 1) + [slice(0,-1),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(1,None)]
+    temp = tf.concat([first_col,include_bl[slices[:]]],axis2)
+
+    # select bottom row of blocks (excluding first column of blocks)
+    slices1 = [slice(None),]*(axis1 - 1) + [slice(-1,None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(None)]
+    # select first column of blocks
+    slices2 = [slice(None),]*(axis1 - 1) + [slice(None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,1),slice(None)]
+    include_tr = tf.concat([include_bl[slices2[:]],tfconcat([temp,include_bl[slices1[:]]], axis = axis1 - 1)],axis = axis2 - 1)
+
+    # **** ADDING BOTTOM RIGHT ****
+    # select first column of all but first row and first column of blocks
+    slices = [slice(None),]*(axis1 - 1) + [slice(1,None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(0,1)]
+    first_col = (tf.cast(1.,dtype) - first_row_select)*include_tr[slices[:]] + ysect4*first_row_select
+
+    slices = [slice(None),]*(axis1 - 1) + [slice(1,None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(1,None)]
+    temp = tf.concat([first_col,include_tr[slices[:]]],axis2)
+
+    # select top row of blocks (excluding first column of blocks)
+    slices1 = [slice(None),]*(axis1 - 1) + [slice(0,1),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(1,None),slice(None)]
+    # select first column of blocks
+    slices2 = [slice(None),]*(axis1 - 1) + [slice(None),slice(None)] + [slice(None),]*(axis2 - axis1 - 2) + [slice(0,1),slice(None)]
+    include_br = tf.concat([include_tr[slices2[:]],tfconcat([include_tr[slices1[:]],temp], axis = axis1 - 1)],axis = axis2 - 1)
+
+    return include_br
