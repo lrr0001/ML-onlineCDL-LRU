@@ -172,7 +172,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
         x,Ax = self.xstep_trunc(y,u,By,negC,layer=0)
         Dx = self.dictObj[0].dmul_sp(x[0])
-        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + s_LP,itstats)
+        return (self.cropAndMerge.crop(tf.squeeze(Dx,axis=-1)) + self.cropAndMerge.crop(s_LP),itstats)
 
     def get_b_shape(self,fftSz,M):
         #return [1,fftSz[0],fftSz[1],M,1,]
