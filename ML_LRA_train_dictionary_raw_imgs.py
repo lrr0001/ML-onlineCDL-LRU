@@ -13,7 +13,7 @@ mu_init = 1.
 n_components = 4
 cmplxdtype = tf.complex128 # This should really be elsewhere.
 batch_size = 8
-steps_per_epoch = 16
+steps_per_epoch = 1
 step_size = 0.00390625
 num_of_epochs = 128
 
