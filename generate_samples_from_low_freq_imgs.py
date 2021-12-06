@@ -93,6 +93,7 @@ python_dict['target_size'] = patch_size
 fid = open('data/processed/' + datasetname + 'param.pckl','wb')
 pkl.dump(python_dict,fid)
 fid.close()
+threshold = 1./1028
 
 # Loop through saved pickle files
 import os
@@ -103,6 +104,7 @@ Yoffset = tf.one_hot([[[0]]],64,tf.cast(32.,dtype),tf.cast(0.,dtype))
 
 #for datatype in ['train/','val/']:
 for datatype in ['val/',]:
+    #break
     filelist = os.listdir(dataloadpath + datatype)
     for filename in filelist:
         fid = open(dataloadpath + datatype + filename,'rb')
@@ -135,6 +137,7 @@ for datatype in ['val/',]:
 
 
 for datatype in ['train/',]:
+    #break
     filelist = os.listdir(dataloadpath + datatype)
     for filename in filelist:
         fid = open(dataloadpath + datatype + filename,'rb')
@@ -150,7 +153,8 @@ for datatype in ['train/',]:
                 c = 0
                 for colcoord in range(startOffset1[1],lowpass.shape[1] - patch_size[1] - padding[1][1] + 1,patch_size[1]):
                     ind_str = '_' + str(r) + '_' + str(c) + '.pckl'
-                    savePatchTrain(coord=(rowcoord,colcoord),lowpass=lowpass,highpass=highpass,raw=raw,padding=padding,patch_size=patch_size,qY=qY,qUV=qUV,Yoffset=Yoffset,datapath=datasavepath + datatype,filename = filename + ind_str,dtype = dtype)
+                    if tf.reduce_mean(highpass[slice(rowcoord, rowcoord + patch_size[0]),slice(colcoord,colcoord + patch_size[1])]**2) > threshold:
+                        savePatchTrain(coord=(rowcoord,colcoord),lowpass=lowpass,highpass=highpass,raw=raw,padding=padding,patch_size=patch_size,qY=qY,qUV=qUV,Yoffset=Yoffset,datapath=datasavepath + datatype,filename = filename + ind_str,dtype = dtype)
                     c += 1
                 r += 1
         elif lowpassShape[0] == 320 and lowpassShape[1] == 480:
@@ -159,7 +163,8 @@ for datatype in ['train/',]:
                 c = 0
                 for colcoord in range(startOffset2[1],lowpass.shape[1] - patch_size[1] - padding[1][1] + 1,patch_size[1]):
                     ind_str = '_' + str(c) + '_' + str(r) + '.pckl'
-                    savePatchTrain(coord=(rowcoord,colcoord),lowpass=lowpass,highpass=highpass,raw=raw,padding=padding,patch_size=patch_size,qY=qY,qUV=qUV,Yoffset=Yoffset,datapath=datasavepath +datatype,filename = filename + ind_str,dtype = dtype)
+                    if tf.reduce_mean(highpass[slice(rowcoord, rowcoord + patch_size[0]),slice(colcoord,colcoord + patch_size[1])]**2) > threshold:
+                        savePatchTrain(coord=(rowcoord,colcoord),lowpass=lowpass,highpass=highpass,raw=raw,padding=padding,patch_size=patch_size,qY=qY,qUV=qUV,Yoffset=Yoffset,datapath=datasavepath +datatype,filename = filename + ind_str,dtype = dtype)
                     c += 1
                 r += 1
         else:

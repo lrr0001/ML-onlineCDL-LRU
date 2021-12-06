@@ -16,7 +16,7 @@ D.append(D_first)# - tf.math.reduce_mean(input_tensor=D_first,axis = (1,2),keepd
 #D.append(np.random.randn(1,fltrSz[0][0],fltrSz[0][1],noc,nof[0]).astype('float64'))
 for layer in range(1,noL):
     D.append(np.random.randn(1,fltrSz[layer][0],fltrSz[layer][1],nof[layer - 1],nof[layer]).astype(dtype))
-b_init = [0.125,0.25]
+b_init = [0.25,0.5]
 databasename = 'BSDS500/'
 #databasename = 'simpleTest/'
 experimentpath = 'data/experiment/' + databasename + 'experiment1/'

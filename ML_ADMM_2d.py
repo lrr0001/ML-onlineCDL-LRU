@@ -514,6 +514,28 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
     def get_alpha(self):
         return self.alpha
 
+class MultiLayerCSC_JPEG(MultiLayerCSC):
+    # Need to include quantization matrix qY
+    def __init__(self,rho,alpha_init,mu_init,b_init,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
+        rho,mu_init = self.init_param(rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
+        self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),noL,fftSz,strides,D,n_components,cmplxdtype)
+        self.initializeInputHandlingLayers()
+
+    def initializeInputHandlingLayers(self):
+        if self.noL > 1:
+            mu = self.updateZ_layer[0].mu
+        else:
+            mu = self.updateZ_lastlayer.mu
+        # Not exactly what you are going for anymore
+        self.updateBzero = GetNextIterBZero(cropAndMerge = self.cropAndMerge,mu = mu,rho = self.rho,dtype = self.cmplxdtype.real_dtype)
+        # This is completely wrong now?
+        self.updateeta = UpdateEta(alpha = self.alpha,dtype = self.cmplxdtype.real_dtype)
+     # Need somooth blcks with a = cnst/(rho + mu) for cropped image (muD_1x_1 + rho(x_0 + eta/rho))/(rho + mu)
+     # But for initialization, a = cnst/mu (use padding trick)
+     # add JPEG update step
+     # work with negC and the compressed images
+     # change which variables are trainable.
+
 
 class GetNextIterX(tf.keras.layers.Layer):
     '''
@@ -682,7 +704,7 @@ class GetNextIterBZero(tf.keras.layers.Layer):
         return (self.mu*self.cropAndMerge.crop(Dx_squeezed) + self.rho*(negC - eta))/(self.mu + self.rho)
 
 class CropPadObject:
-    def __init__(self,signalSz,strides,kernelSz,dtype):
+    def __init__(self,signalSz,strides,kernelSz,dtype,blkSz = None):
         self.dtype = dtype
         padding = 0
         for ii in range(len(kernelSz)):
@@ -691,9 +713,9 @@ class CropPadObject:
                 stride_factor = stride_factor*strides[jj]
             padding = padding + stride_factor*(kernelSz[ii] - 1)
         extra_padding = stride_factor - ((signalSz + padding) % stride_factor)
-        self.build_crop_and_merge(signalSz,padding + extra_padding)
+        self.build_crop_and_merge(signalSz,padding + extra_padding,blkSz)
 
-    def build_crop_and_merge(self,signal_sz,padding):
+    def build_crop_and_merge(self,signal_sz,padding,blkSz):
         padding_top = (padding/2).astype('int') # don't worry: i'll fix it if it doesn't divide evenly
         padding_bottom = (padding/2).astype('int')
         for ii in range(padding.shape[0]):
@@ -706,6 +728,10 @@ class CropPadObject:
         trues = tf.fill((1,signal_sz[0],signal_sz[1],1),1)
         mask = tf.cast(pad(trues),'bool')
         self.merge = Merge(pad,mask,dtype=self.dtype)
+        if blkSz is not None:
+            blkPaddingTuple = tuple([tuple([(blkSz[ii] - (paddingTuple[ii][jj] % blkSz[ii])) % blkSz[ii] for jj in range(2)]) for ii in range(2)])
+            self.blkpad = tf.keras.layers.ZeroPadding2D(padding = blkPaddingTuple, dtype = self.dtype)
+            self.blkcrop = tf.keras.layers.ZeroPadding2d(padding = blkPaddingTuple, dtype = self.dtype)
     def get_fft_size(self,signalSz,strides):
         fftSz = []
         fftSz.append((signalSz[0] + self.paddingTuple[0][0] + self.paddingTuple[0][1],signalSz[1] + self.paddingTuple[1][0] + self.paddingTuple[1][1]))
