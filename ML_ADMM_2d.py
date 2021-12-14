@@ -51,7 +51,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
                        'num_of_Layers': self.noL,
                        'strides': self.strides,
                        'rho': self.rho,
-                       'noi': self.noi,
+                       'num_of_iterations': self.noi,
                        'record_iteration_stats': self.longitstat}
         return config_dict
 
@@ -84,7 +84,6 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         for ii in range(noL - 1): # Last shall be first and first shall be last.
             self.updateZ_layer.append(reversed_updateZ_layer[noL - 2 - ii])
 
-    # *** CHANGED FOR RAW TRAINING ***
     def initializeInputHandlingLayers(self):
         if self.noL > 1:
             mu = self.updateZ_layer[0].mu
@@ -304,7 +303,7 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
         eta,gamma = u
         rep_err = self.representation_error(v,x,z)
         print('representation error: ',rep_err)
-        coef_pen = self.coef_penalty(z)
+        coef_pen = self.coef_penalty(y)
         print('coefficient_penalty: ', coef_pen)
         cnstr_pen = self.cnstrPenalty(u,Ax,By,negC)
         print('constraint penalty: ',cnstr_pen)
@@ -327,7 +326,8 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
             representation_sum += mu/2*self.reconstructionTerm_sp(z[self.noL - 2],self.dictObj[self.noL - 1].dmul_sp(x[self.noL - 1]))
         return representation_sum
 
-    def coef_penalty(self,z):
+    def coef_penalty(self,y):
+        v,z = y
         if self.noL > 1:
             penalty_sum = self.penaltyTerm(z[0],0)
         else:
@@ -513,28 +513,6 @@ class MultiLayerCSC(optmz.ADMM_Relaxed):
 
     def get_alpha(self):
         return self.alpha
-
-class MultiLayerCSC_JPEG(MultiLayerCSC):
-    # Need to include quantization matrix qY
-    def __init__(self,rho,alpha_init,mu_init,b_init,cropAndMerge,fftSz,strides,D,n_components,noi,noL,cmplxdtype,longitstat=False,*args,**kwargs):
-        rho,mu_init = self.init_param(rho,alpha_init,mu_init,cropAndMerge,noi,noL,cmplxdtype,longitstat,*args,**kwargs)
-        self.initializeLayers(rho,mu_init,alpha_init,util.makelist(b_init,noL),noL,fftSz,strides,D,n_components,cmplxdtype)
-        self.initializeInputHandlingLayers()
-
-    def initializeInputHandlingLayers(self):
-        if self.noL > 1:
-            mu = self.updateZ_layer[0].mu
-        else:
-            mu = self.updateZ_lastlayer.mu
-        # Not exactly what you are going for anymore
-        self.updateBzero = GetNextIterBZero(cropAndMerge = self.cropAndMerge,mu = mu,rho = self.rho,dtype = self.cmplxdtype.real_dtype)
-        # This is completely wrong now?
-        self.updateeta = UpdateEta(alpha = self.alpha,dtype = self.cmplxdtype.real_dtype)
-     # Need somooth blcks with a = cnst/(rho + mu) for cropped image (muD_1x_1 + rho(x_0 + eta/rho))/(rho + mu)
-     # But for initialization, a = cnst/mu (use padding trick)
-     # add JPEG update step
-     # work with negC and the compressed images
-     # change which variables are trainable.
 
 
 class GetNextIterX(tf.keras.layers.Layer):
@@ -729,9 +707,10 @@ class CropPadObject:
         mask = tf.cast(pad(trues),'bool')
         self.merge = Merge(pad,mask,dtype=self.dtype)
         if blkSz is not None:
-            blkPaddingTuple = tuple([tuple([(blkSz[ii] - (paddingTuple[ii][jj] % blkSz[ii])) % blkSz[ii] for jj in range(2)]) for ii in range(2)])
-            self.blkpad = tf.keras.layers.ZeroPadding2D(padding = blkPaddingTuple, dtype = self.dtype)
-            self.blkcrop = tf.keras.layers.ZeroPadding2d(padding = blkPaddingTuple, dtype = self.dtype)
+            self.blkPaddingTuple = tuple([tuple([(blkSz[ii] - (self.paddingTuple[ii][jj] % blkSz[ii])) % blkSz[ii] for jj in range(2)]) for ii in range(2)])
+            self.blkpad = tf.keras.layers.ZeroPadding2D(padding = self.blkPaddingTuple, dtype = self.dtype)
+            self.blkcrop = tf.keras.layers.Cropping2D(cropping = self.blkPaddingTuple, dtype = self.dtype)
+
     def get_fft_size(self,signalSz,strides):
         fftSz = []
         fftSz.append((signalSz[0] + self.paddingTuple[0][0] + self.paddingTuple[0][1],signalSz[1] + self.paddingTuple[1][0] + self.paddingTuple[1][1]))

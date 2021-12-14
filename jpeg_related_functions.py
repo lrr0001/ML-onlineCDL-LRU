@@ -591,8 +591,8 @@ def smoothPair(x1,x2,a):
     '''Solution minimizing the equation: (z1 - x1)^2 + (z2 - x2)^2 + a(z1 - z2)^2'''
     z1 = ((1 + a)*x1 + a*x2)/(1 + 2*a)
     z2 = (a*x1 + (1 + a)*x2)/(1 + 2*a)
-    #return z1,z2
-    return x1,x2
+    return z1,z2
+    #return x1,x2
 
 def smoothFour(z1,z2,z3,z4,a):
     '''Solution minimizing the equation: sum_i (yi - xi)^2 + a(y1 - y2)^2 + a(y1 - y3)^2 + a(y2 - y4)^2 + a(y3 - y4)^2
@@ -609,17 +609,29 @@ def smoothFour(z1,z2,z3,z4,a):
     #dtype = y1.dtype
     #return z1 + tf.ones(y1.shape,dtype=dtype),z2 + 2.*tf.ones(y2.shape,dtype=dtype),z3 + 3.*tf.ones(y3.shape,dtype=dtype),z4 + 4.*tf.ones(y4.shape,dtype=dtype)
 
-def smooth_blk_edges(x,a,blkSz = (8,8),dtype = tf.float64):
-    sig_2_blks = tf.keras.layers.Reshape((tf.cast(x.shape[1]/blkSz[0],'int32'),blkSz[0],tf.cast(x.shape[2]/blkSz[1],'int32'),blkSz[1]) + x.shape[3:],dtype=dtype)
-    blks_2_sig = tf.keras.layers.Reshape(x.shape[1:],dtype=dtype)
 
-    rows_done = smoothXsect(sig_2_blks(x),a,axis = 2,blkSz=blkSz[0],dtype=dtype)
+class Smooth_Blk_Edges(tf.keras.layers.Layer):
+    def __init__(self,xshape,a,blkSz,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        blkshape = tf.zeros(shape = (int(xshape[0]/blkSz[0]),tf.cast(blkSz[0],'int32'),int(xshape[1]/blkSz[1]),tf.cast(blkSz[1],'int32'))).shape
+        self.sig_2_blks = tf.keras.layers.Reshape(blkshape + xshape[2:],dtype=self.dtype)
+        self.blks_2_sig = tf.keras.layers.Reshape(xshape,dtype=self.dtype)
+        self.blkSz = blkSz
+        self.a = a
+    def call(self,inputs):
+        blks = self.sig_2_blks(inputs)
 
-    cols_done = smoothXsect(rows_done,a,axis = 4,blkSz = blkSz[1],dtype = dtype)
+        rows_done = smoothXsect(blks,self.a,axis = 2,blkSz=self.blkSz[0],dtype=self.dtype)
 
-    corners_done = smoothCorners(cols_done,a,axis1 = 2,axis2 = 4,blkSz = blkSz,dtype = dtype)
+        cols_done = smoothXsect(rows_done,self.a,axis = 4,blkSz = self.blkSz[1],dtype = self.dtype)
 
-    return blks_2_sig(corners_done)
+        corners_done = smoothCorners(cols_done,self.a,axis1 = 2,axis2 = 4,blkSz = self.blkSz,dtype = self.dtype)
+
+        return self.blks_2_sig(corners_done)
+    def get_config(self):
+        return {'blkSz': self.blkSz, 'a': self.a}
+
+
 
 
 def smoothXsect(blks,a,axis,blkSz,dtype):
@@ -743,3 +755,30 @@ def smoothCorners(blks,a,axis1,axis2,blkSz,dtype):
     include_br = tf.concat([include_tr[slices2[:]],tf.concat([include_tr[slices1[:]],temp], axis = axis1 - 1)],axis = axis2 - 1)
 
     return include_br
+
+def XsectDiff(blks,axis,blkSz,dtype):
+    '''This function applies smoothPair to pairs of cross-sections selected by axis and blkSz.'''
+    # select last within block
+    slices = [slice(None),]*(axis - 1) + [slice(0,-1),slice(blkSz - 1,None)]
+    xsect1 = blks[slices[:]]
+    # select 1st within block
+    slices = [slice(None),]*(axis - 1) + [slice(1,None),slice(0,1)]
+    xsect2 = blks[slices[:]]
+
+    return xsect1 - xsect2
+
+class Measure_Blk_Edges(tf.keras.layers.Layer):
+    def __init__(self,xshape,blkSz,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        blkshape = (int(xshape[0]/blkSz[0]),tf.cast(blkSz[0],'int32'),int(xshape[1]/blkSz[1]),tf.cast(blkSz[1],'int32'))
+        self.sig_2_blks = tf.keras.layers.Reshape(blkshape + xshape[2:],dtype=self.dtype)
+        self.blkSz = blkSz
+    def call(self,inputs):
+        blks = self.sig_2_blks(inputs)
+        row_diff = XsectDiff(blks,axis = 2,blkSz=self.blkSz[0],dtype=self.dtype)
+
+        col_diff = XsectDiff(blks,axis = 4,blkSz = self.blkSz[1],dtype = self.dtype)
+
+        return tf.reduce_sum(row_diff**2) + tf.reduce_sum(col_diff**2)
+    def get_config(self):
+        return {'blkSz': self.blkSz}
